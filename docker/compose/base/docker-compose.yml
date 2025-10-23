@@ -1,0 +1,163 @@
+# Base Docker Compose configuration for SonarQube MCP
+version: '3.8'
+
+networks:
+  sonarqube-mcp:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  postgres_data:
+    driver: local
+  sonarqube_data:
+    driver: local
+  sonarqube_logs:
+    driver: local
+  sonarqube_extensions:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  nginx_ssl:
+    driver: local
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: sonarqube-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sonarqube}
+      POSTGRES_USER: ${POSTGRES_USER:-sonarqube}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../config/postgresql/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - sonarqube-mcp
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sonarqube} -d ${POSTGRES_DB:-sonarqube}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: sonarqube-redis
+    restart: unless-stopped
+    command: redis-server /usr/local/etc/redis/redis.conf
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+      - ../config/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    networks:
+      - sonarqube-mcp
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # SonarQube Community Edition
+  sonarqube:
+    image: sonarqube:10.3-community
+    container_name: sonarqube-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-sonarqube}
+      SONAR_JDBC_USERNAME: ${POSTGRES_USER:-sonarqube}
+      SONAR_JDBC_PASSWORD: ${POSTGRES_PASSWORD}
+      SONAR_WEB_HOST: 0.0.0.0
+      SONAR_WEB_PORT: 9000
+      SONAR_WEB_CONTEXT: /sonarqube
+      SONAR_CE_JAVAOPTS: ${SONAR_CE_JAVAOPTS:--Xmx1G -Xms512m}
+      SONAR_WEB_JAVAOPTS: ${SONAR_WEB_JAVAOPTS:--Xmx1G -Xms512m}
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_logs:/opt/sonarqube/logs
+      - sonarqube_extensions:/opt/sonarqube/extensions
+    networks:
+      - sonarqube-mcp
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/sonarqube/api/system/status || exit 1"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 120s
+
+  # MCP Server
+  mcp-server:
+    build:
+      context: ../../..
+      dockerfile: docker/dockerfiles/mcp-server.Dockerfile
+    container_name: sonarqube-mcp-server
+    restart: unless-stopped
+    depends_on:
+      sonarqube:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SONARQUBE_URL: http://sonarqube:9000/sonarqube
+      SONARQUBE_TOKEN: ${SONARQUBE_TOKEN}
+      SONARQUBE_ORGANIZATION: ${SONARQUBE_ORGANIZATION:-}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CACHE_TTL: ${CACHE_TTL:-300}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SERVER_DEBUG: ${SERVER_DEBUG:-false}
+    volumes:
+      - ../../../logs:/app/logs
+      - ../../../data:/app/data
+    networks:
+      - sonarqube-mcp
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Streamlit Application
+  streamlit-app:
+    build:
+      context: ../../..
+      dockerfile: docker/dockerfiles/streamlit.Dockerfile
+    container_name: sonarqube-streamlit-app
+    restart: unless-stopped
+    depends_on:
+      mcp-server:
+        condition: service_healthy
+    environment:
+      SONARQUBE_URL: http://sonarqube:9000/sonarqube
+      SONARQUBE_TOKEN: ${SONARQUBE_TOKEN}
+      MCP_SERVER_URL: http://mcp-server:8000
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+      STREAMLIT_SERVER_PORT: 8501
+      STREAMLIT_SERVER_ADDRESS: 0.0.0.0
+      STREAMLIT_SERVER_HEADLESS: ${STREAMLIT_SERVER_HEADLESS:-true}
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: false
+    volumes:
+      - ../../../logs:/app/logs
+      - ../../../data:/app/data
+    networks:
+      - sonarqube-mcp
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

@@ -1,0 +1,166 @@
+# Development environment overrides for Docker Compose
+version: '3.8'
+
+services:
+  # Development overrides for MCP Server
+  mcp-server:
+    environment:
+      SERVER_DEBUG: true
+      LOG_LEVEL: DEBUG
+      CACHE_TTL: 60  # Shorter cache for development
+    volumes:
+      - ../../../src:/app/src:ro  # Mount source code for development
+      - ../../../config:/app/config:ro
+      - ../../../logs:/app/logs
+      - ../../../data:/app/data
+    ports:
+      - "8000:8000"  # Expose MCP server port for direct access
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # Development overrides for Streamlit App
+  streamlit-app:
+    environment:
+      STREAMLIT_SERVER_HEADLESS: false  # Allow browser access in dev
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: false
+      STREAMLIT_SERVER_ENABLE_CORS: true  # Enable CORS for development
+      STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION: false  # Disable XSRF for dev
+    volumes:
+      - ../../../src:/app/src:ro  # Mount source code for development
+      - ../../../config:/app/config:ro
+      - ../../../logs:/app/logs
+      - ../../../data:/app/data
+    ports:
+      - "8501:8501"  # Expose Streamlit port for direct access
+    command: ["streamlit", "run", "src/streamlit_app/app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.runOnSave=true"]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # Development overrides for SonarQube
+  sonarqube:
+    environment:
+      SONAR_WEB_JAVAOPTS: -Xmx512m -Xms256m  # Reduced memory for development
+      SONAR_CE_JAVAOPTS: -Xmx512m -Xms256m
+    ports:
+      - "9000:9000"  # Expose SonarQube port for direct access
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  # Development overrides for PostgreSQL
+  postgres:
+    ports:
+      - "5432:5432"  # Expose PostgreSQL port for development tools
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # Development overrides for Redis
+  redis:
+    ports:
+      - "6379:6379"  # Expose Redis port for development tools
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+  # Development overrides for Nginx
+  nginx:
+    ports:
+      - "8080:80"   # Use different port to avoid conflicts
+      - "8443:443"  # Use different port to avoid conflicts
+
+  # Development overrides for Prometheus
+  prometheus:
+    ports:
+      - "9090:9090"  # Expose Prometheus port for direct access
+
+  # Development overrides for Grafana
+  grafana:
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: true  # Allow sign up in development
+      GF_AUTH_ANONYMOUS_ENABLED: true  # Enable anonymous access
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Editor
+    ports:
+      - "3000:3000"  # Expose Grafana port for direct access
+
+  # Add development tools
+  # Mailhog for email testing
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: sonarqube-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"  # SMTP port
+      - "8025:8025"  # Web UI port
+    networks:
+      - sonarqube-mcp
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 32M
+
+  # Redis Commander for Redis management
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: sonarqube-redis-commander
+    restart: unless-stopped
+    depends_on:
+      - redis
+    environment:
+      REDIS_HOSTS: local:redis:6379:0:${REDIS_PASSWORD}
+    ports:
+      - "8081:8081"
+    networks:
+      - sonarqube-mcp
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 32M
+
+  # pgAdmin for PostgreSQL management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: sonarqube-pgadmin
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "8082:80"
+    volumes:
+      - ../config/pgadmin/servers.json:/pgadmin4/servers.json:ro
+    networks:
+      - sonarqube-mcp
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M

@@ -1,0 +1,170 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: streamlit-app
+  namespace: sonarqube-mcp
+  labels:
+    app: streamlit-app
+    component: web-ui
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: streamlit-app
+  template:
+    metadata:
+      labels:
+        app: streamlit-app
+        component: web-ui
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+      - name: streamlit-app
+        image: sonarqube-mcp/streamlit-app:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8501
+          name: http
+        env:
+        - name: SONARQUBE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: sonarqube-mcp-config
+              key: SONARQUBE_URL
+        - name: SONARQUBE_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: sonarqube-mcp-secrets
+              key: sonarqube-token
+        - name: MCP_SERVER_URL
+          value: "http://mcp-server-service:8000"
+        - name: REDIS_URL
+          value: "redis://:$(REDIS_PASSWORD)@redis-service:6379/1"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: sonarqube-mcp-secrets
+              key: redis-password
+        - name: STREAMLIT_SERVER_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: sonarqube-mcp-config
+              key: STREAMLIT_SERVER_PORT
+        - name: STREAMLIT_SERVER_ADDRESS
+          valueFrom:
+            configMapKeyRef:
+              name: sonarqube-mcp-config
+              key: STREAMLIT_SERVER_ADDRESS
+        - name: STREAMLIT_SERVER_HEADLESS
+          valueFrom:
+            configMapKeyRef:
+              name: sonarqube-mcp-config
+              key: STREAMLIT_SERVER_HEADLESS
+        - name: STREAMLIT_BROWSER_GATHER_USAGE_STATS
+          valueFrom:
+            configMapKeyRef:
+              name: sonarqube-mcp-config
+              key: STREAMLIT_BROWSER_GATHER_USAGE_STATS
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 1
+            memory: 2Gi
+        livenessProbe:
+          httpGet:
+            path: /_stcore/health
+            port: 8501
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /_stcore/health
+            port: 8501
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: logs
+          mountPath: /app/logs
+        - name: streamlit-config
+          mountPath: /app/.streamlit
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: logs
+        emptyDir: {}
+      - name: streamlit-config
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: streamlit-app-service
+  namespace: sonarqube-mcp
+  labels:
+    app: streamlit-app
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8501
+    targetPort: 8501
+    name: http
+  selector:
+    app: streamlit-app
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: streamlit-app-hpa
+  namespace: sonarqube-mcp
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: streamlit-app
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 20
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60

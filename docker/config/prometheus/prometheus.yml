@@ -1,0 +1,75 @@
+# Prometheus configuration for SonarQube MCP monitoring
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'sonarqube-mcp'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - "alert_rules.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Node Exporter for system metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # Nginx metrics
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx:80']
+    metrics_path: /nginx_status
+    scrape_interval: 30s
+
+  # PostgreSQL metrics
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  # Redis metrics
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  # SonarQube metrics (if available)
+  - job_name: 'sonarqube'
+    static_configs:
+      - targets: ['sonarqube:9000']
+    metrics_path: /api/monitoring/metrics
+    scrape_interval: 60s
+    scrape_timeout: 30s
+
+  # MCP Server health checks
+  - job_name: 'mcp-server'
+    static_configs:
+      - targets: ['mcp-server:8000']
+    metrics_path: /health
+    scrape_interval: 30s
+
+  # Streamlit app health checks
+  - job_name: 'streamlit-app'
+    static_configs:
+      - targets: ['streamlit-app:8501']
+    metrics_path: /_stcore/health
+    scrape_interval: 30s
+
+  # Custom application metrics (if implemented)
+  - job_name: 'sonarqube-mcp-metrics'
+    static_configs:
+      - targets: ['mcp-server:8001']  # Assuming metrics endpoint on different port
+    metrics_path: /metrics
+    scrape_interval: 30s

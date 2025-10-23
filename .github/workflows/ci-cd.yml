@@ -1,0 +1,328 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [ published ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME_MCP: ${{ github.repository }}/mcp-server
+  IMAGE_NAME_STREAMLIT: ${{ github.repository }}/streamlit-app
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.11, 3.12]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+    
+    - name: Run linting
+      run: |
+        ruff check src/ tests/
+        black --check src/ tests/
+        mypy src/
+    
+    - name: Run unit tests
+      run: |
+        pytest tests/unit/ -v --cov=src --cov-report=xml --cov-report=term-missing
+    
+    - name: Run integration tests
+      run: |
+        pytest tests/integration/ -v
+      env:
+        SONARQUBE_URL: ${{ secrets.TEST_SONARQUBE_URL }}
+        SONARQUBE_TOKEN: ${{ secrets.TEST_SONARQUBE_TOKEN }}
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+    
+    - name: Run Bandit security linter
+      run: |
+        pip install bandit
+        bandit -r src/ -f json -o bandit-report.json
+    
+    - name: Upload security scan results
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-reports
+        path: |
+          trivy-results.sarif
+          bandit-report.json
+
+  build-images:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: [test, security-scan]
+    if: github.event_name != 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Extract metadata for MCP Server
+      id: meta-mcp
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_MCP }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=sha,prefix={{branch}}-
+    
+    - name: Extract metadata for Streamlit App
+      id: meta-streamlit
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_STREAMLIT }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=sha,prefix={{branch}}-
+    
+    - name: Build and push MCP Server image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/dockerfiles/mcp-server.Dockerfile
+        push: true
+        tags: ${{ steps.meta-mcp.outputs.tags }}
+        labels: ${{ steps.meta-mcp.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64,linux/arm64
+    
+    - name: Build and push Streamlit App image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/dockerfiles/streamlit.Dockerfile
+        push: true
+        tags: ${{ steps.meta-streamlit.outputs.tags }}
+        labels: ${{ steps.meta-streamlit.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64,linux/arm64
+    
+    - name: Run Trivy vulnerability scanner on images
+      run: |
+        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+          aquasec/trivy image --format sarif --output mcp-server-trivy.sarif \
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_MCP }}:${{ github.sha }}
+        
+        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+          aquasec/trivy image --format sarif --output streamlit-app-trivy.sarif \
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_STREAMLIT }}:${{ github.sha }}
+    
+    - name: Upload image scan results
+      uses: actions/upload-artifact@v3
+      with:
+        name: image-security-reports
+        path: |
+          mcp-server-trivy.sarif
+          streamlit-app-trivy.sarif
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build-images
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+    
+    - name: Configure kubectl
+      run: |
+        echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > kubeconfig
+        export KUBECONFIG=kubeconfig
+    
+    - name: Deploy to staging
+      run: |
+        export KUBECONFIG=kubeconfig
+        
+        # Update image tags in manifests
+        sed -i "s|sonarqube-mcp/mcp-server:latest|${{ env.REGISTRY }}/${{ env.IMAGE_NAME_MCP }}:develop-${{ github.sha }}|g" k8s/mcp-server.yaml
+        sed -i "s|sonarqube-mcp/streamlit-app:latest|${{ env.REGISTRY }}/${{ env.IMAGE_NAME_STREAMLIT }}:develop-${{ github.sha }}|g" k8s/streamlit-app.yaml
+        
+        # Apply manifests
+        kubectl apply -f k8s/namespace.yaml
+        kubectl apply -f k8s/secrets.yaml
+        kubectl apply -f k8s/postgres.yaml
+        kubectl apply -f k8s/redis.yaml
+        kubectl apply -f k8s/sonarqube.yaml
+        kubectl apply -f k8s/mcp-server.yaml
+        kubectl apply -f k8s/streamlit-app.yaml
+        kubectl apply -f k8s/monitoring/
+        
+        # Wait for deployment
+        kubectl rollout status deployment/mcp-server -n sonarqube-mcp --timeout=300s
+        kubectl rollout status deployment/streamlit-app -n sonarqube-mcp --timeout=300s
+    
+    - name: Run smoke tests
+      run: |
+        export KUBECONFIG=kubeconfig
+        
+        # Wait for services to be ready
+        kubectl wait --for=condition=ready pod -l app=mcp-server -n sonarqube-mcp --timeout=300s
+        kubectl wait --for=condition=ready pod -l app=streamlit-app -n sonarqube-mcp --timeout=300s
+        
+        # Run basic health checks
+        kubectl port-forward svc/mcp-server-service 8000:8000 -n sonarqube-mcp &
+        sleep 10
+        curl -f http://localhost:8000/health || exit 1
+        
+        kubectl port-forward svc/streamlit-app-service 8501:8501 -n sonarqube-mcp &
+        sleep 10
+        curl -f http://localhost:8501/_stcore/health || exit 1
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build-images
+    if: github.event_name == 'release'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+    
+    - name: Configure kubectl
+      run: |
+        echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" | base64 -d > kubeconfig
+        export KUBECONFIG=kubeconfig
+    
+    - name: Deploy to production
+      run: |
+        export KUBECONFIG=kubeconfig
+        
+        # Update image tags in manifests
+        sed -i "s|sonarqube-mcp/mcp-server:latest|${{ env.REGISTRY }}/${{ env.IMAGE_NAME_MCP }}:${{ github.event.release.tag_name }}|g" k8s/mcp-server.yaml
+        sed -i "s|sonarqube-mcp/streamlit-app:latest|${{ env.REGISTRY }}/${{ env.IMAGE_NAME_STREAMLIT }}:${{ github.event.release.tag_name }}|g" k8s/streamlit-app.yaml
+        
+        # Apply manifests with rolling update
+        kubectl apply -f k8s/namespace.yaml
+        kubectl apply -f k8s/secrets.yaml
+        kubectl apply -f k8s/postgres.yaml
+        kubectl apply -f k8s/redis.yaml
+        kubectl apply -f k8s/sonarqube.yaml
+        kubectl apply -f k8s/mcp-server.yaml
+        kubectl apply -f k8s/streamlit-app.yaml
+        kubectl apply -f k8s/ingress.yaml
+        kubectl apply -f k8s/monitoring/
+        
+        # Wait for deployment
+        kubectl rollout status deployment/mcp-server -n sonarqube-mcp --timeout=600s
+        kubectl rollout status deployment/streamlit-app -n sonarqube-mcp --timeout=600s
+    
+    - name: Run production health checks
+      run: |
+        export KUBECONFIG=kubeconfig
+        
+        # Wait for services to be ready
+        kubectl wait --for=condition=ready pod -l app=mcp-server -n sonarqube-mcp --timeout=600s
+        kubectl wait --for=condition=ready pod -l app=streamlit-app -n sonarqube-mcp --timeout=600s
+        
+        # Verify ingress is working
+        sleep 30
+        curl -f https://api.sonarqube-mcp.yourdomain.com/health || exit 1
+        curl -f https://sonarqube-mcp.yourdomain.com/_stcore/health || exit 1
+    
+    - name: Notify deployment success
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        text: 'Production deployment successful! 🚀'
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  cleanup:
+    name: Cleanup
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always()
+    
+    steps:
+    - name: Clean up old images
+      run: |
+        # This would typically clean up old container images
+        # Implementation depends on your registry cleanup policies
+        echo "Cleanup completed"

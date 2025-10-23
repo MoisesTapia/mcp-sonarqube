@@ -1,0 +1,86 @@
+# SonarQube MCP Configuration
+
+# Server Configuration
+server:
+  host: "localhost"
+  port: 8000
+  log_level: "INFO"
+  debug: false
+
+# SonarQube Configuration
+sonarqube:
+  url: "${SONARQUBE_URL}"
+  token: "${SONARQUBE_TOKEN}"
+  organization: "${SONARQUBE_ORGANIZATION:}"
+  timeout: 30
+  max_retries: 3
+
+# Cache Configuration
+cache:
+  enabled: true
+  ttl: 300  # 5 minutes
+  redis_url: "${REDIS_URL:}"
+  
+  # Cache TTL by data type (seconds)
+  ttl_by_type:
+    projects: 300
+    metrics: 300
+    issues: 60
+    quality_gates: 600
+    users: 1800
+
+# Performance Configuration
+performance:
+  connection_pool_size: 10
+  max_concurrent_requests: 50
+  request_timeout: 30
+  pagination_size: 100
+
+# Security Configuration
+security:
+  https_only: true
+  validate_ssl: true
+  token_validation_interval: 3600  # 1 hour
+  audit_logging: true
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "json"
+  file: "logs/sonarqube-mcp.log"
+  max_file_size: "10MB"
+  backup_count: 5
+  
+  # Log levels by component
+  loggers:
+    "src.mcp_server": "INFO"
+    "src.sonarqube_client": "INFO"
+    "src.streamlit_app": "INFO"
+    "httpx": "WARNING"
+
+# Streamlit Configuration
+streamlit:
+  port: 8501
+  host: "localhost"
+  theme: "light"
+  auto_refresh_interval: 300  # 5 minutes
+  
+  # Page configuration
+  pages:
+    dashboard:
+      refresh_interval: 60
+      max_projects_display: 50
+    issues:
+      page_size: 25
+      auto_refresh: true
+    security:
+      alert_threshold: "HIGH"
+      report_formats: ["pdf", "csv", "json"]
+
+# Feature Flags
+features:
+  enable_chat: true
+  enable_caching: true
+  enable_metrics: true
+  enable_security_analysis: true
+  enable_bulk_operations: true
