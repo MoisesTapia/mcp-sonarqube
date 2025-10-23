@@ -417,4 +417,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Made with ❤️ by the SonarQube MCP Team**
+**Made with ❤️ by the Moises Tapia (Cl0nR3v)**
