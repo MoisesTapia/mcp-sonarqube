@@ -5,10 +5,10 @@ import pandas as pd
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 
-from ..services.sonarqube_service import SonarQubeService
-from ..utils.session import SessionManager
-from ..components.visualization import AdvancedVisualization
-from ..components.reporting import ReportGenerator, DataExporter, ScheduledReporting
+from streamlit_app.services.sonarqube_service import SonarQubeService
+from streamlit_app.utils.session import SessionManager
+from streamlit_app.components.visualization import AdvancedVisualization
+from streamlit_app.components.reporting import ReportGenerator, DataExporter, ScheduledReporting
 
 
 def render():

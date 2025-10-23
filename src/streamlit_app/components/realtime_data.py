@@ -4,9 +4,9 @@ from typing import Dict, Any, List, Optional, Callable
 from datetime import datetime, timedelta
 import streamlit as st
 
-from ..services.mcp_integration import get_mcp_integration_service, SyncedData
-from ..utils.error_handler import get_error_handler, ErrorCategory
-from ..utils.session import SessionManager
+from streamlit_app.services.mcp_integration import get_mcp_integration_service, SyncedData
+from streamlit_app.utils.error_handler import get_error_handler, ErrorCategory
+from streamlit_app.utils.session import SessionManager
 
 
 class RealtimeDataComponent:

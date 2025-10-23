@@ -8,7 +8,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from pydantic import ValidationError
 
-from ..utils.logger import PerformanceLogger, SecurityLogger, get_logger
+from streamlit_app.utils.logger import get_logger
 from .exceptions import (
     APIError,
     AuthenticationError,
@@ -24,8 +24,6 @@ from .rate_limiter import RateLimiter
 from .validators import InputValidator
 
 logger = get_logger(__name__)
-security_logger = SecurityLogger(__name__)
-perf_logger = PerformanceLogger(__name__)
 
 
 class SonarQubeClient:
@@ -97,7 +95,7 @@ class SonarQubeClient:
         if not parsed.netloc:
             raise SQValidationError(f"Invalid URL format: {url}")
 
-        # Ensure URL ends with /api
+        # Ensure URL ends with /api (SonarQube's actual API endpoint)
         if not parsed.path.endswith("/api"):
             if parsed.path.endswith("/"):
                 url = url + "api"
@@ -279,21 +277,8 @@ class SonarQubeClient:
                 response = await self._client.request(method, url, **kwargs)
                 duration_ms = (time.time() - start_time) * 1000
                 
-                # Log API access
-                security_logger.log_api_access(
-                    endpoint=url,
-                    method=method,
-                    status_code=response.status_code,
-                    response_time_ms=duration_ms,
-                )
-                
-                # Log performance
-                perf_logger.log_api_call(
-                    endpoint=url,
-                    method=method,
-                    duration_ms=duration_ms,
-                    status_code=response.status_code,
-                )
+                # Log API access and performance
+                logger.info(f"API {method} {url} - {response.status_code} - {duration_ms:.2f}ms")
                 
                 # Handle successful responses
                 if response.status_code < 400:
@@ -304,16 +289,7 @@ class SonarQubeClient:
                 
             except httpx.TimeoutException as e:
                 duration_ms = (time.time() - start_time) * 1000
-                perf_logger.log_error_with_context(
-                    error=e,
-                    context={
-                        "method": method,
-                        "url": url,
-                        "attempt": attempt + 1,
-                        "duration_ms": duration_ms,
-                    },
-                    operation="http_request_timeout",
-                )
+                logger.error(f"http_request_timeout - {str(e)} Context: {{'method': '{method}', 'url': '{url}', 'attempt': {attempt + 1}, 'duration_ms': {duration_ms}}}")
                 
                 if attempt == self.max_retries:
                     raise NetworkError(f"Request timeout after {self.max_retries + 1} attempts") from e
@@ -321,16 +297,7 @@ class SonarQubeClient:
                 
             except httpx.NetworkError as e:
                 duration_ms = (time.time() - start_time) * 1000
-                perf_logger.log_error_with_context(
-                    error=e,
-                    context={
-                        "method": method,
-                        "url": url,
-                        "attempt": attempt + 1,
-                        "duration_ms": duration_ms,
-                    },
-                    operation="http_network_error",
-                )
+                logger.error(f"http_network_error - {str(e)} Context: {{'method': '{method}', 'url': '{url}', 'attempt': {attempt + 1}, 'duration_ms': {duration_ms}}}")
                 
                 if attempt == self.max_retries:
                     raise NetworkError(f"Network error: {str(e)}") from e
@@ -339,32 +306,14 @@ class SonarQubeClient:
             except SonarQubeException as e:
                 # Log security events for authentication/authorization errors
                 if isinstance(e, (AuthenticationError, AuthorizationError)):
-                    security_logger.log_security_event(
-                        event_type="api_access_denied",
-                        details={
-                            "method": method,
-                            "endpoint": url,
-                            "error_type": type(e).__name__,
-                            "status_code": e.status_code,
-                        },
-                        severity="WARNING",
-                    )
+                    logger.warning(f"Security Event [api_access_denied]: {{'method': '{method}', 'endpoint': '{url}', 'error_type': '{type(e).__name__}', 'status_code': {getattr(e, 'status_code', 'N/A')}}}")
                 
                 # Don't retry on client errors (4xx) or authentication issues
                 raise
                 
             except Exception as e:
                 duration_ms = (time.time() - start_time) * 1000
-                perf_logger.log_error_with_context(
-                    error=e,
-                    context={
-                        "method": method,
-                        "url": url,
-                        "attempt": attempt + 1,
-                        "duration_ms": duration_ms,
-                    },
-                    operation="http_unexpected_error",
-                )
+                logger.error(f"http_unexpected_error - {str(e)} Context: {{'method': '{method}', 'url': '{url}', 'attempt': {attempt + 1}, 'duration_ms': {duration_ms}}}")
                 
                 if attempt == self.max_retries:
                     raise NetworkError(f"Unexpected error: {str(e)}") from e

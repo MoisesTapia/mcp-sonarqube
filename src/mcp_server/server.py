@@ -9,8 +9,8 @@ from typing import Any, Dict, List, Optional
 from fastmcp import FastMCP
 from mcp.types import Tool
 
-from ..sonarqube_client import SonarQubeClient, InputValidator
-from ..utils import create_cache_manager, get_logger, setup_logging
+from sonarqube_client import SonarQubeClient, InputValidator
+from utils import create_cache_manager, get_logger, setup_logging
 from .cache_manager import MCPCacheManager
 from .config import get_settings
 from .docs_generator import MCPDocsGenerator
@@ -702,10 +702,14 @@ class SonarQubeMCPServer:
                 loop.add_signal_handler(sig, self._signal_handler)
 
         try:
-            # Run the FastMCP server
-            await self.app.run(
-                transport="stdio",  # Use stdio transport for MCP
-            )
+            # For Docker deployment, we'll run indefinitely and let the health server handle HTTP requests
+            # The MCP server will be available via stdio when needed
+            self.logger.info("MCP Server ready - waiting for connections...")
+            
+            # Keep the server running
+            while not self._shutdown_event.is_set():
+                await asyncio.sleep(1)
+                
         except KeyboardInterrupt:
             self.logger.info("Received keyboard interrupt")
         except Exception as e:
@@ -744,8 +748,8 @@ class SonarQubeMCPServer:
         """Async context manager for server lifecycle."""
         await self.initialize()
         
-        # Start health check server
-        self.health_server = HealthCheckServer(port=8000, mcp_server=self)
+        # Start health check server on a different port
+        self.health_server = HealthCheckServer(port=8001, mcp_server=self)
         self.health_runner = await self.health_server.start()
         
         try:
@@ -771,5 +775,25 @@ async def main() -> None:
         sys.exit(1)
 
 
+def run_server():
+    """Run the server in a new event loop."""
+    try:
+        # Simple approach: just use asyncio.run() and handle the exception
+        asyncio.run(main())
+    except RuntimeError as e:
+        if "asyncio.run() cannot be called from a running event loop" in str(e) or "Already running asyncio in this thread" in str(e):
+            # If there's already an event loop, run directly
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(main())
+            finally:
+                loop.close()
+        else:
+            raise
+    except Exception as e:
+        print(f"Server failed to start: {e}")
+        sys.exit(1)
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    run_server()

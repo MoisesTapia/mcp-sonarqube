@@ -9,9 +9,9 @@ from dataclasses import dataclass, field
 import streamlit as st
 
 from .mcp_client import MCPClient, MCPToolResult, get_mcp_client
-from ..utils.session import SessionManager
-from ..utils.performance import performance_timer
-from ...utils.logger import get_logger
+from streamlit_app.utils.session import SessionManager
+from streamlit_app.utils.performance import performance_timer
+from streamlit_app.utils.logger import get_logger
 
 
 @dataclass
@@ -204,12 +204,8 @@ class MCPIntegrationService:
                 
                 synced_data.last_updated = datetime.now()
                 
-                # Update session state
-                st.session_state.mcp_integration_state["synced_data"][data_key] = {
-                    "data": synced_data.data,
-                    "error": synced_data.error,
-                    "last_updated": synced_data.last_updated.isoformat()
-                }
+                # Note: Cannot update session state from background thread
+                # Session state will be updated when data is accessed from main thread
                 
             except Exception as e:
                 self.logger.error(f"Error fetching data for {data_key}: {e}")

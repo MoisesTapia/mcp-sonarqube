@@ -4,11 +4,11 @@ import asyncio
 from typing import Dict, Any, List, Optional, Tuple
 import streamlit as st
 
-from ...sonarqube_client.client import SonarQubeClient
-from ...sonarqube_client.exceptions import SonarQubeException
-from ..config.settings import ConfigManager
-from ..utils.session import SessionManager
-from ..utils.performance import performance_timer, get_performance_monitor, PerformanceOptimizer
+from sonarqube_client.client import SonarQubeClient
+from sonarqube_client.exceptions import SonarQubeException
+from streamlit_app.config.settings import ConfigManager
+from streamlit_app.utils.session import SessionManager
+from streamlit_app.utils.performance import performance_timer, get_performance_monitor, PerformanceOptimizer
 
 
 class SonarQubeService:

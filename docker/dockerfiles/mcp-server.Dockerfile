@@ -63,10 +63,10 @@ USER mcpuser
 
 # Health check endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:8001/health || exit 1
 
-# Expose port
-EXPOSE 8000
+# Expose ports
+EXPOSE 8000 8001
 
 # Default command
 CMD ["python", "-m", "src.mcp_server.server"]

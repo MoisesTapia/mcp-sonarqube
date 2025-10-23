@@ -7,9 +7,9 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from typing import Dict, Any, List
 
-from ..services.sonarqube_service import SonarQubeService
-from ..utils.session import SessionManager
-from ..components import create_realtime_component, render_sync_controls
+from streamlit_app.services.sonarqube_service import SonarQubeService
+from streamlit_app.utils.session import SessionManager
+from streamlit_app.components import create_realtime_component, render_sync_controls
 
 
 def render():

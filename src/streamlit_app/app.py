@@ -6,12 +6,12 @@ from typing import Dict, Any
 
 import streamlit as st
 
-from .config.settings import ConfigManager
-from .pages import configuration, dashboard, projects, issues, security, chat, performance, reports
-from .utils.auth import AuthManager
-from .utils.session import SessionManager
-from .services import initialize_mcp_client, initialize_mcp_integration
-from .utils.error_handler import get_error_handler
+from streamlit_app.config.settings import ConfigManager
+from streamlit_app.views import configuration, dashboard, projects, issues, security, chat, performance, reports
+from streamlit_app.utils.auth import AuthManager
+from streamlit_app.utils.session import SessionManager
+from streamlit_app.services import initialize_mcp_client, initialize_mcp_integration
+from streamlit_app.utils.error_handler import get_error_handler
 
 
 def main():

@@ -1,309 +1,206 @@
-"""Structured logging utilities for SonarQube MCP."""
+"""Logging utilities for the entire application."""
 
 import logging
-import logging.handlers
-import os
 import sys
-from pathlib import Path
-from typing import Any, Dict, Optional
-
-import structlog
-
-
-def setup_logging(
-    log_level: str = "INFO",
-    log_format: str = "json",
-    log_file: Optional[str] = None,
-    max_file_size: str = "10MB",
-    backup_count: int = 5,
-) -> None:
-    """
-    Set up structured logging configuration.
-
-    Args:
-        log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        log_format: Log format (json, plain)
-        log_file: Path to log file (optional)
-        max_file_size: Maximum log file size before rotation
-        backup_count: Number of backup files to keep
-    """
-    # Convert log level string to logging constant
-    numeric_level = getattr(logging, log_level.upper(), logging.INFO)
-
-    # Configure structlog
-    processors = [
-        structlog.contextvars.merge_contextvars,
-        structlog.processors.add_log_level,
-        structlog.processors.StackInfoRenderer(),
-        structlog.dev.set_exc_info,
-        structlog.processors.TimeStamper(fmt="iso"),
-    ]
-
-    if log_format.lower() == "json":
-        processors.append(structlog.processors.JSONRenderer())
-    else:
-        processors.append(structlog.dev.ConsoleRenderer())
-
-    structlog.configure(
-        processors=processors,
-        wrapper_class=structlog.make_filtering_bound_logger(numeric_level),
-        logger_factory=structlog.WriteLoggerFactory(),
-        cache_logger_on_first_use=True,
-    )
-
-    # Configure standard logging
-    root_logger = logging.getLogger()
-    root_logger.setLevel(numeric_level)
-
-    # Remove existing handlers
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
-
-    # Console handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(numeric_level)
-    
-    if log_format.lower() == "json":
-        console_formatter = logging.Formatter(
-            '{"timestamp": "%(asctime)s", "level": "%(levelname)s", '
-            '"logger": "%(name)s", "message": "%(message)s"}'
-        )
-    else:
-        console_formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-    
-    console_handler.setFormatter(console_formatter)
-    root_logger.addHandler(console_handler)
-
-    # File handler (if specified)
-    if log_file:
-        log_path = Path(log_file)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Parse file size
-        size_bytes = _parse_file_size(max_file_size)
-        
-        file_handler = logging.handlers.RotatingFileHandler(
-            log_file,
-            maxBytes=size_bytes,
-            backupCount=backup_count,
-            encoding="utf-8",
-        )
-        file_handler.setLevel(numeric_level)
-        file_handler.setFormatter(console_formatter)
-        root_logger.addHandler(file_handler)
-
-    # Set specific logger levels
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
-
-
-def _parse_file_size(size_str: str) -> int:
-    """Parse file size string to bytes."""
-    size_str = size_str.upper().strip()
-    
-    if size_str.endswith("KB"):
-        return int(size_str[:-2]) * 1024
-    elif size_str.endswith("MB"):
-        return int(size_str[:-2]) * 1024 * 1024
-    elif size_str.endswith("GB"):
-        return int(size_str[:-2]) * 1024 * 1024 * 1024
-    else:
-        return int(size_str)
-
-
-def get_logger(name: str) -> structlog.BoundLogger:
-    """
-    Get a structured logger instance.
-
-    Args:
-        name: Logger name (usually __name__)
-
-    Returns:
-        Configured structlog logger
-    """
-    return structlog.get_logger(name)
-
-
-class SecurityLogger:
-    """Logger for security-related events with sanitization."""
-
-    def __init__(self, name: str):
-        self.logger = get_logger(name)
-
-    def log_authentication_attempt(
-        self,
-        success: bool,
-        user: Optional[str] = None,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None,
-    ) -> None:
-        """Log authentication attempt."""
-        self.logger.info(
-            "Authentication attempt",
-            success=success,
-            user=self._sanitize_user(user),
-            ip_address=ip_address,
-            user_agent=self._sanitize_user_agent(user_agent),
-        )
-
-    def log_api_access(
-        self,
-        endpoint: str,
-        method: str,
-        user: Optional[str] = None,
-        status_code: Optional[int] = None,
-        response_time_ms: Optional[float] = None,
-    ) -> None:
-        """Log API access."""
-        self.logger.info(
-            "API access",
-            endpoint=endpoint,
-            method=method,
-            user=self._sanitize_user(user),
-            status_code=status_code,
-            response_time_ms=response_time_ms,
-        )
-
-    def log_permission_denied(
-        self,
-        operation: str,
-        resource: str,
-        user: Optional[str] = None,
-    ) -> None:
-        """Log permission denied event."""
-        self.logger.warning(
-            "Permission denied",
-            operation=operation,
-            resource=resource,
-            user=self._sanitize_user(user),
-        )
-
-    def log_security_event(
-        self,
-        event_type: str,
-        details: Dict[str, Any],
-        severity: str = "INFO",
-    ) -> None:
-        """Log general security event."""
-        # Sanitize sensitive data in details
-        sanitized_details = self._sanitize_dict(details)
-        
-        log_method = getattr(self.logger, severity.lower(), self.logger.info)
-        log_method(
-            "Security event",
-            event_type=event_type,
-            **sanitized_details,
-        )
-
-    def _sanitize_user(self, user: Optional[str]) -> Optional[str]:
-        """Sanitize user identifier."""
-        if not user:
-            return None
-        
-        # Mask email addresses partially
-        if "@" in user:
-            parts = user.split("@")
-            if len(parts) == 2:
-                username, domain = parts
-                if len(username) > 2:
-                    username = username[:2] + "*" * (len(username) - 2)
-                return f"{username}@{domain}"
-        
-        # Mask long usernames
-        if len(user) > 4:
-            return user[:2] + "*" * (len(user) - 4) + user[-2:]
-        
-        return user
-
-    def _sanitize_user_agent(self, user_agent: Optional[str]) -> Optional[str]:
-        """Sanitize user agent string."""
-        if not user_agent:
-            return None
-        
-        # Truncate long user agent strings
-        if len(user_agent) > 100:
-            return user_agent[:100] + "..."
-        
-        return user_agent
-
-    def _sanitize_dict(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Sanitize dictionary by removing/masking sensitive keys."""
-        sensitive_keys = {
-            "password", "token", "secret", "key", "auth", "credential",
-            "authorization", "x-auth-token", "api-key"
-        }
-        
-        sanitized = {}
-        for key, value in data.items():
-            key_lower = key.lower()
-            
-            if any(sensitive in key_lower for sensitive in sensitive_keys):
-                sanitized[key] = "***REDACTED***"
-            elif isinstance(value, dict):
-                sanitized[key] = self._sanitize_dict(value)
-            elif isinstance(value, str) and len(value) > 1000:
-                sanitized[key] = value[:1000] + "...[TRUNCATED]"
-            else:
-                sanitized[key] = value
-        
-        return sanitized
+from typing import Optional
+from datetime import datetime
+import os
 
 
 class PerformanceLogger:
-    """Logger for performance metrics and monitoring."""
-
-    def __init__(self, name: str):
-        self.logger = get_logger(name)
-
-    def log_api_call(
-        self,
-        endpoint: str,
-        method: str,
-        duration_ms: float,
-        status_code: int,
-        cache_hit: bool = False,
-    ) -> None:
+    """Logger for performance metrics."""
+    
+    def __init__(self, name: str = "performance", level: str = "INFO"):
+        self.logger = logging.getLogger(name)
+        self.logger.setLevel(getattr(logging, level.upper()))
+        
+        if not self.logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            )
+            handler.setFormatter(formatter)
+            self.logger.addHandler(handler)
+    
+    def log_api_call(self, method: str, endpoint: str, duration: float, status_code: int):
         """Log API call performance."""
-        self.logger.info(
-            "API call completed",
-            endpoint=endpoint,
-            method=method,
-            duration_ms=round(duration_ms, 2),
-            status_code=status_code,
-            cache_hit=cache_hit,
+        self.logger.info(f"API {method} {endpoint} - {duration:.2f}ms - {status_code}")
+    
+    def log_cache_hit(self, key: str, hit: bool):
+        """Log cache hit/miss."""
+        status = "HIT" if hit else "MISS"
+        self.logger.debug(f"Cache {status}: {key}")
+    
+    def log_error_with_context(self, message: str = None, error: Exception = None, context: dict = None, **kwargs):
+        """Log error with additional context."""
+        # If message is not provided, try to get it from kwargs
+        if message is None:
+            message = kwargs.get('operation', 'Error occurred')
+        
+        error_str = f" - {str(error)}" if error else ""
+        context_str = f" Context: {context}" if context else ""
+        
+        # Remove operation from kwargs to avoid duplication
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k != 'operation'}
+        kwargs_str = f" {filtered_kwargs}" if filtered_kwargs else ""
+        
+        self.logger.error(f"{message}{error_str}{context_str}{kwargs_str}")
+
+
+class SecurityLogger:
+    """Logger for security events."""
+    
+    def __init__(self, name: str = "security", level: str = "INFO"):
+        self.logger = logging.getLogger(name)
+        self.logger.setLevel(getattr(logging, level.upper()))
+        
+        if not self.logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            )
+            handler.setFormatter(formatter)
+            self.logger.addHandler(handler)
+    
+    def log_auth_attempt(self, user: str, success: bool, ip: str = None):
+        """Log authentication attempt."""
+        status = "SUCCESS" if success else "FAILED"
+        msg = f"Auth {status} for user: {user}"
+        if ip:
+            msg += f" from IP: {ip}"
+        self.logger.info(msg)
+    
+    def log_permission_check(self, user: str, resource: str, allowed: bool):
+        """Log permission check."""
+        status = "ALLOWED" if allowed else "DENIED"
+        self.logger.info(f"Permission {status}: {user} -> {resource}")
+    
+    def log_api_access(self, endpoint: str, method: str, status_code: int, response_time_ms: float):
+        """Log API access for security monitoring."""
+        self.logger.info(f"API Access: {method} {endpoint} - {status_code} - {response_time_ms:.2f}ms")
+    
+    def log_security_event(self, event_type: str, details: dict, severity: str = "INFO"):
+        """Log security event."""
+        self.logger.log(
+            getattr(logging, severity.upper(), logging.INFO),
+            f"Security Event [{event_type}]: {details}"
         )
 
-    def log_cache_operation(
-        self,
-        operation: str,
-        cache_key: str,
-        hit: bool,
-        ttl_seconds: Optional[int] = None,
-    ) -> None:
-        """Log cache operation."""
-        self.logger.debug(
-            "Cache operation",
-            operation=operation,
-            cache_key=cache_key,
-            hit=hit,
-            ttl_seconds=ttl_seconds,
-        )
 
-    def log_error_with_context(
-        self,
-        error: Exception,
-        context: Dict[str, Any],
-        operation: str,
-    ) -> None:
-        """Log error with contextual information."""
-        self.logger.error(
-            "Operation failed",
-            operation=operation,
-            error_type=type(error).__name__,
-            error_message=str(error),
-            **context,
-            exc_info=True,
+class ApplicationLogger:
+    """General application logger."""
+    
+    def __init__(self, name: str = "app", level: str = "INFO"):
+        self.logger = logging.getLogger(name)
+        self.logger.setLevel(getattr(logging, level.upper()))
+        
+        # Prevent duplicate handlers
+        if not self.logger.handlers:
+            self._setup_handlers()
+    
+    def _setup_handlers(self):
+        """Setup logging handlers."""
+        # Console handler
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.INFO)
+        
+        # File handler (if logs directory exists)
+        log_dir = os.getenv("LOG_DIR", "/app/logs")
+        if os.path.exists(log_dir):
+            log_file = os.path.join(log_dir, "app.log")
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setLevel(logging.DEBUG)
+            
+            # File formatter with more details
+            file_formatter = logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(module)s:%(lineno)d - %(message)s'
+            )
+            file_handler.setFormatter(file_formatter)
+            self.logger.addHandler(file_handler)
+        
+        # Console formatter
+        console_formatter = logging.Formatter(
+            '%(asctime)s - %(levelname)s - %(message)s',
+            datefmt='%H:%M:%S'
         )
+        console_handler.setFormatter(console_formatter)
+        self.logger.addHandler(console_handler)
+    
+    def debug(self, message: str, **kwargs):
+        """Log debug message."""
+        self.logger.debug(message, extra=kwargs)
+    
+    def info(self, message: str, **kwargs):
+        """Log info message."""
+        self.logger.info(message, extra=kwargs)
+    
+    def warning(self, message: str, **kwargs):
+        """Log warning message."""
+        self.logger.warning(message, extra=kwargs)
+    
+    def error(self, message: str, **kwargs):
+        """Log error message."""
+        self.logger.error(message, extra=kwargs)
+    
+    def critical(self, message: str, **kwargs):
+        """Log critical message."""
+        self.logger.critical(message, extra=kwargs)
+    
+    def exception(self, message: str, **kwargs):
+        """Log exception with traceback."""
+        self.logger.exception(message, extra=kwargs)
+
+
+# Global logger instances
+_logger: Optional[ApplicationLogger] = None
+_performance_logger: Optional[PerformanceLogger] = None
+_security_logger: Optional[SecurityLogger] = None
+
+
+def get_logger(name: str = "app", level: str = "INFO") -> ApplicationLogger:
+    """Get or create logger instance."""
+    global _logger
+    if _logger is None:
+        log_level = os.getenv("LOG_LEVEL", level)
+        _logger = ApplicationLogger(name, log_level)
+    return _logger
+
+
+def get_performance_logger() -> PerformanceLogger:
+    """Get or create performance logger instance."""
+    global _performance_logger
+    if _performance_logger is None:
+        _performance_logger = PerformanceLogger()
+    return _performance_logger
+
+
+def get_security_logger() -> SecurityLogger:
+    """Get or create security logger instance."""
+    global _security_logger
+    if _security_logger is None:
+        _security_logger = SecurityLogger()
+    return _security_logger
+
+
+def setup_logging(log_level: str = "INFO", log_format: str = "plain"):
+    """Setup application logging."""
+    # Configure root logger
+    level = getattr(logging, log_level.upper(), logging.INFO)
+    
+    if log_format == "json":
+        format_str = '{"timestamp": "%(asctime)s", "level": "%(levelname)s", "logger": "%(name)s", "message": "%(message)s"}'
+    else:
+        format_str = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    
+    logging.basicConfig(
+        level=level,
+        format=format_str,
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    # Reduce noise from external libraries
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("requests").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    
+    return get_logger()

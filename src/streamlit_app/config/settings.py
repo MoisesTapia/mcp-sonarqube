@@ -38,8 +38,10 @@ class ConfigManager:
     
     def __init__(self):
         """Initialize configuration manager."""
-        self.config_file = Path.home() / ".sonarqube_mcp" / "config.json"
-        self.config_file.parent.mkdir(exist_ok=True)
+        # Use /app/data directory which exists and has proper permissions
+        config_dir = Path("/app/data") / ".sonarqube_mcp"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        self.config_file = config_dir / "config.json"
         self._config: Optional[SonarQubeConfig] = None
         self._load_config()
     

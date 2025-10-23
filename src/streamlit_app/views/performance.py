@@ -7,14 +7,14 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from typing import Dict, List, Any
 
-from ..utils.performance import (
+from streamlit_app.utils.performance import (
     get_performance_monitor, 
     get_cache_manager,
     PerformanceOptimizer,
     auto_refresh_data
 )
-from ..services.sonarqube_service import SonarQubeService
-from ..config.settings import ConfigManager
+from streamlit_app.services.sonarqube_service import SonarQubeService
+from streamlit_app.config.settings import ConfigManager
 
 
 def render_system_health():
@@ -276,7 +276,7 @@ def render_api_performance():
             title="Average Response Time by Endpoint",
             labels={"avg_response_time": "Response Time (seconds)"}
         )
-        fig_response.update_xaxis(tickangle=45)
+        fig_response.update_layout(xaxis_tickangle=45)
         st.plotly_chart(fig_response, use_container_width=True)
     
     with col2:
@@ -288,7 +288,7 @@ def render_api_performance():
             title="API Calls by Endpoint",
             labels={"calls": "Number of Calls"}
         )
-        fig_calls.update_xaxis(tickangle=45)
+        fig_calls.update_layout(xaxis_tickangle=45)
         st.plotly_chart(fig_calls, use_container_width=True)
     
     # API performance table

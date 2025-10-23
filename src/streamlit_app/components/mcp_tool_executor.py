@@ -5,10 +5,10 @@ from typing import Dict, Any, List, Optional, Union
 from datetime import datetime
 import streamlit as st
 
-from ..services.mcp_client import get_mcp_client, MCPToolResult
-from ..services.mcp_integration import get_mcp_integration_service
-from ..utils.error_handler import get_error_handler, ErrorCategory, ErrorSeverity
-from ..utils.session import SessionManager
+from streamlit_app.services.mcp_client import get_mcp_client, MCPToolResult
+from streamlit_app.services.mcp_integration import get_mcp_integration_service
+from streamlit_app.utils.error_handler import get_error_handler, ErrorCategory, ErrorSeverity
+from streamlit_app.utils.session import SessionManager
 
 
 class MCPToolExecutor:
@@ -441,7 +441,7 @@ class MCPToolExecutor:
             st.success(f"✅ MCP Server Connected")
         else:
             st.error(f"❌ MCP Server: {connection_info['status']}")
-            if st.button("🔄 Retry Connection"):
+            if st.button("🔄 Retry Connection", key="mcp_tool_executor_retry"):
                 self.mcp_client.check_health_sync()
                 st.rerun()
             return

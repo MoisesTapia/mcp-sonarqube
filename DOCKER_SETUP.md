@@ -101,6 +101,36 @@ docker/
     └── secrets/               # Secrets management (gitignored)
 ```
 
+## Important Configuration Changes
+
+### API Endpoint Updates
+
+**SonarQube API Endpoint**: The correct SonarQube API endpoint is `/api`, not `/web_api/api`. The system automatically appends `/api` to the base URL.
+
+**Correct URLs:**
+- **Browser Access**: `http://localhost:9000/sonarqube` (for UI configuration)
+- **Internal Docker Network**: `http://sonarqube:9000/sonarqube` (for container-to-container communication)
+- **API Endpoint**: Automatically becomes `http://sonarqube:9000/sonarqube/api`
+
+### Service Ports
+
+**MCP Server**: Runs on port **8001** (not 8000)
+- Internal: `http://mcp-server:8001`
+- External: `http://localhost:8001`
+- Health Check: `http://localhost:8001/health`
+
+**Streamlit App**: Runs on port **8501**
+- External: `http://localhost:8501`
+- Health Check: `http://localhost:8501/_stcore/health`
+
+### Network Configuration
+
+All services run in the `sonarqube-mcp` Docker network for internal communication:
+- **SonarQube**: `sonarqube:9000`
+- **MCP Server**: `mcp-server:8001`
+- **PostgreSQL**: `postgres:5432`
+- **Redis**: `redis:6379`
+
 ## Configuration
 
 ### Environment Files
@@ -137,7 +167,8 @@ bash docker/scripts/deploy.sh deploy development
 
 **Development Services:**
 - Streamlit App: http://localhost:8501
-- SonarQube: http://localhost:9000
+- SonarQube: http://localhost:9000/sonarqube
+- MCP Server: http://localhost:8001
 - Grafana: http://localhost:3000 (admin/admin)
 - Prometheus: http://localhost:9090
 - Redis Commander: http://localhost:8081
@@ -175,9 +206,9 @@ bash docker/scripts/deploy.sh deploy production
 
 ### Core Application Services
 
-- **MCP Server**: FastMCP server for SonarQube integration
-- **Streamlit App**: Web interface for SonarQube MCP
-- **SonarQube**: Code quality analysis platform
+- **MCP Server**: FastMCP server for SonarQube integration (Port 8001)
+- **Streamlit App**: Web interface for SonarQube MCP (Port 8501)
+- **SonarQube**: Code quality analysis platform (Port 9000, Context: /sonarqube)
 
 ### Infrastructure Services
 

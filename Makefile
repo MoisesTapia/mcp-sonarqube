@@ -35,6 +35,8 @@ help:
 	@echo "  health           - Check service health"
 	@echo "  monitor          - Start resource monitoring"
 	@echo "  cleanup          - Clean up Docker resources"
+	@echo "  verify-endpoints - Verify API endpoints are working"
+	@echo "  check-ports      - Check if services are running on correct ports"
 	@echo ""
 	@echo "Deployment:"
 	@echo "  deploy-dev       - Deploy to development"
@@ -307,4 +309,70 @@ info:
 	@echo "Python version: $$(python --version)"
 	@echo "Current directory: $$(pwd)"
 	@echo "Git branch: $$(git branch --show-current 2>/dev/null || echo 'Not a git repository')"
-	@echo "Git commit: $$(git rev-parse --short HEAD 2>/dev/null || echo 'Not a git repository')"
+	@echo "Git commit: $$(git rev-parse --short HEAD 2>/dev/null || echo 'Not a git repository')"# ==========
+===================================================================
+# VERIFICATION AND DEBUGGING
+# =============================================================================
+
+# Verify API endpoints are working correctly
+verify-endpoints:
+	@echo "Verifying API endpoints..."
+	@echo "Testing SonarQube API..."
+	@curl -s http://localhost:9000/sonarqube/api/system/status | jq . || echo "❌ SonarQube API failed"
+	@echo "Testing MCP Server..."
+	@curl -s http://localhost:8001/health | jq . || echo "❌ MCP Server failed"
+	@echo "Testing Streamlit health..."
+	@curl -s http://localhost:8501/_stcore/health || echo "❌ Streamlit health check failed"
+	@echo "✅ Endpoint verification completed"
+
+# Check if services are running on correct ports
+check-ports:
+	@echo "Checking service ports..."
+	@echo "SonarQube (9000):"
+	@docker ps --filter "name=sonarqube-server" --format "table {{.Names}}\t{{.Ports}}" || echo "❌ SonarQube not running"
+	@echo "MCP Server (8001):"
+	@docker ps --filter "name=sonarqube-mcp-server" --format "table {{.Names}}\t{{.Ports}}" || echo "❌ MCP Server not running"
+	@echo "Streamlit (8501):"
+	@docker ps --filter "name=sonarqube-streamlit-app" --format "table {{.Names}}\t{{.Ports}}" || echo "❌ Streamlit not running"
+
+# Quick development setup with verification
+quickstart: dev
+	@echo "Waiting for services to start..."
+	@sleep 15
+	@echo "Verifying setup..."
+	@make verify-endpoints
+	@echo ""
+	@echo "🎉 Quick start completed!"
+	@echo "Access your applications:"
+	@echo "  - Streamlit App: http://localhost:8501"
+	@echo "  - SonarQube: http://localhost:9000/sonarqube"
+	@echo "  - MCP Server: http://localhost:8001"
+	@echo ""
+	@echo "Next steps:"
+	@echo "1. Get a SonarQube token from http://localhost:9000/sonarqube"
+	@echo "2. Configure Streamlit app at http://localhost:8501"
+	@echo "3. Use URL: http://localhost:9000/sonarqube in the configuration"
+
+# Show current configuration status
+status:
+	@echo "SonarQube MCP Status"
+	@echo "==================="
+	@make check-ports
+	@echo ""
+	@make verify-endpoints
+	@echo ""
+	@echo "Docker Compose Status:"
+	@docker-compose -f docker/compose/base/docker-compose.yml ps
+
+# Migration helper - updates old configurations
+migrate:
+	@echo "🔄 Migrating to new configuration..."
+	@echo "Stopping old containers..."
+	@docker-compose down 2>/dev/null || true
+	@echo "Removing old images..."
+	@docker rmi $$(docker images -q sonarqube-mcp* 2>/dev/null) 2>/dev/null || true
+	@echo "Starting with new configuration..."
+	@make dev
+	@echo "✅ Migration completed!"
+	@echo "Please reconfigure your Streamlit app with:"
+	@echo "  URL: http://localhost:9000/sonarqube"

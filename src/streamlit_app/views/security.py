@@ -9,9 +9,9 @@ from typing import Dict, List, Any, Optional
 import json
 import io
 
-from ..services.sonarqube_service import SonarQubeService
-from ..config.settings import ConfigManager
-from ..utils.session import SessionManager
+from streamlit_app.services.sonarqube_service import SonarQubeService
+from streamlit_app.config.settings import ConfigManager
+from streamlit_app.utils.session import SessionManager
 
 
 class SecurityAnalyzer:
@@ -256,7 +256,7 @@ def render_vulnerability_prioritization(analyzer: SecurityAnalyzer, project_key:
             y=list(categories.values()),
             title="Vulnerabilities by Category"
         )
-        fig_category.update_xaxis(tickangle=45)
+        fig_category.update_layout(xaxis_tickangle=45)
         st.plotly_chart(fig_category, use_container_width=True)
     
     # Top priority hotspots table

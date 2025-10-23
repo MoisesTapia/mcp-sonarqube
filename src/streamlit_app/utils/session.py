@@ -3,7 +3,7 @@
 from typing import Any, Dict, Optional
 import streamlit as st
 from datetime import datetime, timedelta
-from .performance import get_cache_manager
+from streamlit_app.utils.performance import get_cache_manager
 
 
 class SessionManager:

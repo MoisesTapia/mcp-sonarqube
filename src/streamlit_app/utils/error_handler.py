@@ -7,8 +7,8 @@ from enum import Enum
 from dataclasses import dataclass, field
 import streamlit as st
 
-from ...utils.logger import get_logger
-from ..utils.session import SessionManager
+from streamlit_app.utils.logger import get_logger
+from streamlit_app.utils.session import SessionManager
 
 
 class ErrorSeverity(Enum):

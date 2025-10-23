@@ -1,5 +1,4 @@
 # Development environment overrides for Docker Compose
-version: '3.8'
 
 services:
   # Development overrides for MCP Server
@@ -29,6 +28,11 @@ services:
       STREAMLIT_BROWSER_GATHER_USAGE_STATS: false
       STREAMLIT_SERVER_ENABLE_CORS: true  # Enable CORS for development
       STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION: false  # Disable XSRF for dev
+      # SonarQube configuration for development
+      SONARQUBE_URL: http://sonarqube-server:9000/sonarqube
+      SONARQUBE_TOKEN: ${SONARQUBE_TOKEN}
+      # MCP Server configuration
+      MCP_SERVER_URL: http://sonarqube-mcp-server:8001
     volumes:
       - ../../../src:/app/src:ro  # Mount source code for development
       - ../../../config:/app/config:ro
@@ -36,7 +40,7 @@ services:
       - ../../../data:/app/data
     ports:
       - "8501:8501"  # Expose Streamlit port for direct access
-    command: ["streamlit", "run", "src/streamlit_app/app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.runOnSave=true"]
+    command: ["streamlit", "run", "src/streamlit_app/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
     deploy:
       resources:
         limits:
@@ -80,28 +84,6 @@ services:
           memory: 256M
         reservations:
           memory: 128M
-
-  # Development overrides for Nginx
-  nginx:
-    ports:
-      - "8080:80"   # Use different port to avoid conflicts
-      - "8443:443"  # Use different port to avoid conflicts
-
-  # Development overrides for Prometheus
-  prometheus:
-    ports:
-      - "9090:9090"  # Expose Prometheus port for direct access
-
-  # Development overrides for Grafana
-  grafana:
-    environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
-      GF_USERS_ALLOW_SIGN_UP: true  # Allow sign up in development
-      GF_AUTH_ANONYMOUS_ENABLED: true  # Enable anonymous access
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Editor
-    ports:
-      - "3000:3000"  # Expose Grafana port for direct access
 
   # Add development tools
   # Mailhog for email testing

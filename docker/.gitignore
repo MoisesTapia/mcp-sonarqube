@@ -1,0 +1,31 @@
+# Docker-specific gitignore
+
+# Environment files with sensitive data
+environments/.env.*
+!environments/.env.*.example
+
+# Local data directories
+data/
+logs/
+
+# Backup files
+backups/
+
+# Docker Compose override files
+docker-compose.override.yml
+docker-compose.local.yml
+
+# Volume data (if mounted locally)
+volumes/
+
+# SSL certificates
+ssl/
+certs/
+
+# Temporary files
+*.tmp
+*.log
+
+# OS specific files
+.DS_Store
+Thumbs.db

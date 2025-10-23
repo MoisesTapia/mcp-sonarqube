@@ -7,9 +7,9 @@ from typing import Dict, List, Any, Optional
 import plotly.express as px
 import plotly.graph_objects as go
 
-from ..services.sonarqube_service import SonarQubeService
-from ..config.settings import ConfigManager
-from ..utils.session import SessionManager
+from streamlit_app.services.sonarqube_service import SonarQubeService
+from streamlit_app.config.settings import ConfigManager
+from streamlit_app.utils.session import SessionManager
 
 
 class IssueManager:

@@ -1,7 +1,7 @@
 """Chat page with MCP tool execution interface."""
 
 import streamlit as st
-from ..components import render_mcp_tool_executor, render_sync_controls
+from streamlit_app.components import render_mcp_tool_executor, render_sync_controls
 
 
 def render():
@@ -65,7 +65,7 @@ def render():
         st.subheader("Interactive Chat Interface")
         
         # Import and render the chat interface
-        from ..components.chat_interface import ChatInterface
+        from streamlit_app.components.chat_interface import ChatInterface
         
         chat_interface = ChatInterface()
         chat_interface.render_chat_interface()

@@ -13,7 +13,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from ..services.mcp_client import MCPClient
+from streamlit_app.services.mcp_client import MCPClient
 
 
 class ChatInterface:
@@ -43,7 +43,7 @@ class ChatInterface:
     async def connect_to_mcp(self) -> bool:
         """Connect to the MCP server."""
         try:
-            from ..services.mcp_client import get_mcp_client
+            from streamlit_app.services.mcp_client import get_mcp_client
             
             self.mcp_client = get_mcp_client()
             
@@ -91,7 +91,7 @@ class ChatInterface:
                             st.rerun()
             
             with col2:
-                if st.button("🔄 Retry Connection"):
+                if st.button("🔄 Retry Connection", key="chat_interface_retry"):
                     with st.spinner("Retrying connection..."):
                         if asyncio.run(self.connect_to_mcp()):
                             st.success("Connected to MCP server!")

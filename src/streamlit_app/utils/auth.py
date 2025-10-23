@@ -4,14 +4,14 @@ import asyncio
 from typing import Dict, Any, Optional, Tuple
 import streamlit as st
 
-from ...sonarqube_client.client import SonarQubeClient
-from ...sonarqube_client.exceptions import (
+from sonarqube_client.client import SonarQubeClient
+from sonarqube_client.exceptions import (
     AuthenticationError,
     AuthorizationError,
     NetworkError,
     SonarQubeException
 )
-from ..config.settings import ConfigManager
+from streamlit_app.config.settings import ConfigManager
 
 
 class AuthManager:
@@ -155,7 +155,7 @@ class AuthManager:
             return None
         
         try:
-            user_info = await client.get("/user/current")
+            user_info = await client.get("/users/current")
             return user_info
         except Exception as e:
             st.error(f"Failed to get user info: {e}")
@@ -189,7 +189,7 @@ class AuthManager:
         
         try:
             # Get user permissions
-            user_info = await client.get("/user/current")
+            user_info = await client.get("/users/current")
             user_permissions = user_info.get("permissions", {}).get("global", [])
             
             for permission in user_permissions:

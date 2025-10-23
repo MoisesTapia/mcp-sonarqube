@@ -3,7 +3,7 @@
 import asyncio
 from typing import Any, Dict, List, Optional
 
-from ..utils import CacheManager, get_logger
+from utils import CacheManager, get_logger
 
 logger = get_logger(__name__)
 

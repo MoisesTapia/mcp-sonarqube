@@ -3,8 +3,8 @@
 import streamlit as st
 from typing import Optional
 
-from ..config.settings import SonarQubeConfig
-from ..utils.session import SessionManager
+from streamlit_app.config.settings import SonarQubeConfig
+from streamlit_app.utils.session import SessionManager
 
 
 def render():

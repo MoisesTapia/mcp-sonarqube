@@ -40,19 +40,87 @@ A comprehensive Model Context Protocol (MCP) server that enables seamless integr
 
 2. **Configure environment**:
    ```bash
-   cp .env.example .env
-   # Edit .env with your SonarQube credentials
+   # Copy and edit the development environment file
+   cp docker/environments/.env.development docker/environments/.env.development.local
+   
+   # Edit the file and replace 'your_sonarqube_token_here' with your actual token
+   nano docker/environments/.env.development.local
    ```
 
-3. **Start services**:
+3. **Start the services**:
    ```bash
+   # Start all services
    docker-compose -f docker/compose/base/docker-compose.yml up -d
+   
+   # Or use the deployment script
+   bash docker/scripts/deploy.sh deploy development
    ```
 
-4. **Access applications**:
-   - Streamlit UI: http://localhost:8501
-   - MCP Server: http://localhost:8000
-   - SonarQube: http://localhost:9000/sonarqube
+4. **Access the applications**:
+   - **Streamlit App**: http://localhost:8501
+   - **SonarQube**: http://localhost:9000/sonarqube
+   - **MCP Server**: http://localhost:8001 (for debugging)
+
+5. **Configure SonarQube connection**:
+   - Open Streamlit app at http://localhost:8501
+   - Go to Configuration page
+   - Enter SonarQube URL: `http://localhost:9000/sonarqube`
+   - Enter your SonarQube token
+   - Test and save configuration
+   # Edit the file with your SonarQube token and settings
+   ```
+
+4. **Start services**:
+   ```bash
+   # Start all services with development configuration
+   docker compose -f docker/compose/base/docker-compose.yml \
+                   -f docker/compose/environments/development.yml \
+                   --env-file docker/environments/.env.development \
+                   up --build
+   ```
+
+5. **Access applications**:
+
+| Service | URL | Port | Credentials |
+|---------|-----|------|-------------|
+| **Streamlit UI** | http://localhost:8501 | 8501 | - |
+| **SonarQube** | http://localhost:9000/sonarqube | 9000 | admin / admin |
+| **MCP Server** | http://localhost:8000/health | 8000 | - |
+| **pgAdmin** | http://localhost:8082 | 8082 | admin@example.com / admin |
+| **Redis Commander** | http://localhost:8081 | 8081 | - |
+| **Mailhog** | http://localhost:8025 | 8025 | - |
+| **PostgreSQL** | localhost:5432 | 5432 | sonarqube / sonarqube_dev_password |
+| **Redis** | localhost:6379 | 6379 | redis_dev_password |
+
+📖 **For detailed Docker configuration, see [docker/README.md](docker/README.md)**
+
+#### Docker Helper Script
+
+For convenience, use the Docker helper script:
+
+```bash
+# Make the script executable (Linux/Mac)
+chmod +x scripts/docker-helper.sh
+
+# Initial setup
+./scripts/docker-helper.sh setup
+
+# Start services
+./scripts/docker-helper.sh start
+
+# Check status and URLs
+./scripts/docker-helper.sh status
+./scripts/docker-helper.sh urls
+
+# View logs
+./scripts/docker-helper.sh logs mcp-server
+
+# Open shell in container
+./scripts/docker-helper.sh shell postgres
+
+# For help with all commands
+./scripts/docker-helper.sh
+```
 
 ### Option 2: Local Development
 
@@ -111,6 +179,10 @@ A comprehensive Model Context Protocol (MCP) server that enables seamless integr
 - [Architecture Overview](docs/developer/architecture.md) - System architecture and design
 - [Contributing Guide](CONTRIBUTING.md) - How to contribute to the project
 - [Development Setup](docs/developer/development.md) - Local development environment
+
+### Docker Documentation
+- [Docker Setup Guide](docker/README.md) - Complete Docker configuration guide
+- [Configuration Files](docker/config/README.md) - Service configuration documentation
 
 ## 🔧 Configuration
 

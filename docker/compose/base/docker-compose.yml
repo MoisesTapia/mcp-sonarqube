@@ -1,5 +1,4 @@
 # Base Docker Compose configuration for SonarQube MCP
-version: '3.8'
 
 networks:
   sonarqube-mcp:
@@ -119,13 +118,15 @@ services:
       CACHE_TTL: ${CACHE_TTL:-300}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       SERVER_DEBUG: ${SERVER_DEBUG:-false}
+    ports:
+      - "8001:8001"
     volumes:
       - ../../../logs:/app/logs
       - ../../../data:/app/data
     networks:
       - sonarqube-mcp
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -144,12 +145,14 @@ services:
     environment:
       SONARQUBE_URL: http://sonarqube:9000/sonarqube
       SONARQUBE_TOKEN: ${SONARQUBE_TOKEN}
-      MCP_SERVER_URL: http://mcp-server:8000
+      MCP_SERVER_URL: http://mcp-server:8001
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
       STREAMLIT_SERVER_PORT: 8501
       STREAMLIT_SERVER_ADDRESS: 0.0.0.0
       STREAMLIT_SERVER_HEADLESS: ${STREAMLIT_SERVER_HEADLESS:-true}
       STREAMLIT_BROWSER_GATHER_USAGE_STATS: false
+    ports:
+      - "8501:8501"
     volumes:
       - ../../../logs:/app/logs
       - ../../../data:/app/data
