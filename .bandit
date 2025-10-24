@@ -1,0 +1,46 @@
+# Bandit configuration file
+# https://bandit.readthedocs.io/en/latest/config.html
+
+[bandit]
+# Exclude test files and specific directories
+exclude_dirs = [
+    "tests",
+    "venv",
+    ".venv",
+    "build",
+    "dist",
+    ".git",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache"
+]
+
+# Skip specific test IDs (uncomment and modify as needed)
+# skips = ["B101", "B601"]
+
+# Test IDs to include (leave empty to include all)
+tests = []
+
+# Confidence levels: LOW, MEDIUM, HIGH
+confidence = ["HIGH", "MEDIUM"]
+
+# Severity levels: LOW, MEDIUM, HIGH  
+severity = ["HIGH", "MEDIUM"]
+
+# Output format options: csv, custom, html, json, screen, txt, xml, yaml
+format = "json"
+
+# Include full path in reports
+include_full_path = true
+
+# Aggregate output by vulnerability type
+aggregate = "vuln"
+
+# Number of lines of code context to include
+context_lines = 3
+
+# Plugins to load (leave empty for all)
+plugins = []
+
+# Baseline file to compare against (optional)
+# baseline = "baseline.json"

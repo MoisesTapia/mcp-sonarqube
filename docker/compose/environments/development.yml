@@ -13,7 +13,7 @@ services:
       - ../../../logs:/app/logs
       - ../../../data:/app/data
     ports:
-      - "8000:8000"  # Expose MCP server port for direct access
+      - "8001:8001"  # Expose MCP server port for direct access
     deploy:
       resources:
         limits:
@@ -29,10 +29,10 @@ services:
       STREAMLIT_SERVER_ENABLE_CORS: true  # Enable CORS for development
       STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION: false  # Disable XSRF for dev
       # SonarQube configuration for development
-      SONARQUBE_URL: http://sonarqube-server:9000/sonarqube
+      SONARQUBE_URL: http://sonarqube:9000/sonarqube
       SONARQUBE_TOKEN: ${SONARQUBE_TOKEN}
       # MCP Server configuration
-      MCP_SERVER_URL: http://sonarqube-mcp-server:8001
+      MCP_SERVER_URL: http://mcp-server:8001
     volumes:
       - ../../../src:/app/src:ro  # Mount source code for development
       - ../../../config:/app/config:ro

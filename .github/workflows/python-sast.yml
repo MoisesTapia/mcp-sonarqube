@@ -1,0 +1,570 @@
+name: Python SAST (Static Application Security Testing)
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run SAST weekly on Mondays at 2 AM UTC
+    - cron: '0 2 * * 1'
+
+env:
+  PYTHON_VERSION: [3.11, 3.13]
+
+jobs:
+  # Security Scanning with Multiple Tools
+  security-scan:
+    name: Security Analysis
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-sast-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-sast-pip-
+
+    - name: Install security scanning tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements-dev.txt
+        pip install safety bandit semgrep pip-audit
+
+    - name: Run Safety (Dependency Vulnerability Scan)
+      run: |
+        echo "🔍 Running Safety dependency vulnerability scan..."
+        
+        # Install project dependencies for accurate scanning
+        pip install -r requirements.txt
+        
+        # Run Safety with multiple output formats
+        safety check --json --output safety-report.json || true
+        safety check --output safety-report.txt || true
+        safety check --full-report --output safety-full-report.txt || true
+        
+        # Run with policy file if exists
+        if [ -f ".safety-policy.yml" ]; then
+          safety check --policy-file .safety-policy.yml --output safety-policy-report.txt || true
+        fi
+        
+        echo "✅ Safety scan completed"
+
+    - name: Run Bandit (Security Linting)
+      run: |
+        echo "🔍 Running Bandit security linting..."
+        
+        # Run Bandit with multiple output formats
+        bandit -r src/ -f json -o bandit-report.json || true
+        bandit -r src/ -f txt -o bandit-report.txt || true
+        bandit -r src/ -f html -o bandit-report.html || true
+        
+        # Run with custom configuration if exists
+        if [ -f ".bandit" ]; then
+          bandit -r src/ -f json -o bandit-config-report.json || true
+        fi
+        
+        echo "✅ Bandit scan completed"
+
+    - name: Run Semgrep (SAST) - CLI
+      run: |
+        echo "🔍 Running Semgrep static analysis..."
+        
+        # Run with different rule sets
+        semgrep --config=auto src/ --json --output=semgrep-auto-report.json || true
+        semgrep --config=auto src/ --output=semgrep-auto-report.txt || true
+        
+        semgrep --config=p/security-audit src/ --json --output=semgrep-security-report.json || true
+        semgrep --config=p/python src/ --json --output=semgrep-python-report.json || true
+        semgrep --config=p/owasp-top-ten src/ --json --output=semgrep-owasp-report.json || true
+        semgrep --config=p/secrets src/ --json --output=semgrep-secrets-report.json || true
+        semgrep --config=p/cwe-top-25 src/ --json --output=semgrep-cwe-report.json || true
+        
+        echo "✅ Semgrep CLI scan completed"
+      env:
+        SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+    - name: Run Semgrep (SAST) - Action
+      uses: returntocorp/semgrep-action@v1
+      with:
+        config: >-
+          p/security-audit
+          p/secrets
+          p/python
+          p/owasp-top-ten
+          p/cwe-top-25
+          p/django
+          p/flask
+      env:
+        SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+    - name: Run pip-audit (Alternative Vulnerability Scanner)
+      run: |
+        echo "🔍 Running pip-audit vulnerability scan..."
+        
+        pip-audit --format=json --output=pip-audit-report.json || true
+        pip-audit --output=pip-audit-report.txt || true
+        
+        # Scan requirements files directly
+        if [ -f "requirements.txt" ]; then
+          pip-audit --requirement requirements.txt --format=json --output=pip-audit-requirements.json || true
+        fi
+        
+        echo "✅ pip-audit scan completed"
+
+    - name: Generate comprehensive security report
+      run: |
+        echo "📊 Generating comprehensive security report..."
+        
+        cat > security-analysis-report.md << 'EOF'
+        # 🔒 Python SAST Security Analysis Report
+        
+        **Generated:** $(date)
+        **Repository:** ${{ github.repository }}
+        **Branch:** ${{ github.ref_name }}
+        **Commit:** ${{ github.sha }}
+        **Python Version:** ${{ env.PYTHON_VERSION }}
+        
+        ## 📋 Executive Summary
+        
+        This report contains comprehensive Static Application Security Testing (SAST) results including:
+        - **Dependency Vulnerability Scanning:** Safety, pip-audit
+        - **Security Linting:** Bandit
+        - **Static Analysis:** Semgrep (multiple rule sets)
+        - **Pattern Matching:** OWASP Top 10, CWE Top 25, Secrets Detection
+        
+        ## 🔍 Vulnerability Analysis
+        
+        ### Safety (Dependency Vulnerabilities)
+        EOF
+        
+        # Analyze Safety results
+        if [ -f safety-report.json ]; then
+          SAFETY_VULNS=$(jq '.vulnerabilities | length' safety-report.json 2>/dev/null || echo "0")
+          echo "- **Vulnerabilities Found:** $SAFETY_VULNS" >> security-analysis-report.md
+          
+          if [ "$SAFETY_VULNS" -gt "0" ]; then
+            echo "- **Status:** 🚨 Action Required" >> security-analysis-report.md
+            echo "" >> security-analysis-report.md
+            echo "#### Critical Vulnerabilities:" >> security-analysis-report.md
+            jq -r '.vulnerabilities[] | "- **\(.package_name)** \(.installed_version): \(.vulnerability_id) - \(.advisory)"' safety-report.json 2>/dev/null | head -10 >> security-analysis-report.md || true
+          else
+            echo "- **Status:** ✅ No vulnerabilities found" >> security-analysis-report.md
+          fi
+        else
+          echo "- **Status:** ❌ Scan failed or no report generated" >> security-analysis-report.md
+        fi
+        
+        echo "" >> security-analysis-report.md
+        echo "### pip-audit (Cross-Validation)" >> security-analysis-report.md
+        
+        if [ -f pip-audit-report.json ]; then
+          PIP_AUDIT_VULNS=$(jq '. | length' pip-audit-report.json 2>/dev/null || echo "0")
+          echo "- **Vulnerabilities Found:** $PIP_AUDIT_VULNS" >> security-analysis-report.md
+          
+          if [ "$PIP_AUDIT_VULNS" -gt "0" ]; then
+            echo "- **Status:** 🚨 Cross-validation confirms vulnerabilities" >> security-analysis-report.md
+          else
+            echo "- **Status:** ✅ No vulnerabilities found" >> security-analysis-report.md
+          fi
+        fi
+        
+        echo "" >> security-analysis-report.md
+        echo "### Bandit (Security Linting)" >> security-analysis-report.md
+        
+        if [ -f bandit-report.json ]; then
+          BANDIT_ISSUES=$(jq '.results | length' bandit-report.json 2>/dev/null || echo "0")
+          echo "- **Security Issues Found:** $BANDIT_ISSUES" >> security-analysis-report.md
+          
+          if [ "$BANDIT_ISSUES" -gt "0" ]; then
+            HIGH_SEVERITY=$(jq '[.results[] | select(.issue_severity == "HIGH")] | length' bandit-report.json 2>/dev/null || echo "0")
+            MEDIUM_SEVERITY=$(jq '[.results[] | select(.issue_severity == "MEDIUM")] | length' bandit-report.json 2>/dev/null || echo "0")
+            LOW_SEVERITY=$(jq '[.results[] | select(.issue_severity == "LOW")] | length' bandit-report.json 2>/dev/null || echo "0")
+            
+            echo "  - **High Severity:** $HIGH_SEVERITY" >> security-analysis-report.md
+            echo "  - **Medium Severity:** $MEDIUM_SEVERITY" >> security-analysis-report.md
+            echo "  - **Low Severity:** $LOW_SEVERITY" >> security-analysis-report.md
+            
+            if [ "$HIGH_SEVERITY" -gt "0" ]; then
+              echo "- **Status:** 🚨 Critical - Immediate Action Required" >> security-analysis-report.md
+            elif [ "$MEDIUM_SEVERITY" -gt "0" ]; then
+              echo "- **Status:** ⚠️ Review Required" >> security-analysis-report.md
+            else
+              echo "- **Status:** ℹ️ Low Priority Issues" >> security-analysis-report.md
+            fi
+          else
+            echo "- **Status:** ✅ No security issues found" >> security-analysis-report.md
+          fi
+        fi
+        
+        echo "" >> security-analysis-report.md
+        echo "### Semgrep (Static Analysis)" >> security-analysis-report.md
+        
+        # Aggregate Semgrep results
+        TOTAL_SEMGREP_FINDINGS=0
+        for semgrep_file in semgrep-*-report.json; do
+          if [ -f "$semgrep_file" ]; then
+            FINDINGS=$(jq '.results | length' "$semgrep_file" 2>/dev/null || echo "0")
+            TOTAL_SEMGREP_FINDINGS=$((TOTAL_SEMGREP_FINDINGS + FINDINGS))
+          fi
+        done
+        
+        echo "- **Total Findings:** $TOTAL_SEMGREP_FINDINGS" >> security-analysis-report.md
+        
+        if [ "$TOTAL_SEMGREP_FINDINGS" -gt "0" ]; then
+          echo "- **Status:** ⚠️ Review Required" >> security-analysis-report.md
+          
+          # Break down by rule set
+          echo "" >> security-analysis-report.md
+          echo "#### Findings by Rule Set:" >> security-analysis-report.md
+          
+          for rule_set in security python owasp secrets cwe; do
+            if [ -f "semgrep-${rule_set}-report.json" ]; then
+              RULE_FINDINGS=$(jq '.results | length' "semgrep-${rule_set}-report.json" 2>/dev/null || echo "0")
+              echo "  - **${rule_set^}:** $RULE_FINDINGS findings" >> security-analysis-report.md
+            fi
+          done
+        else
+          echo "- **Status:** ✅ No issues found" >> security-analysis-report.md
+        fi
+        
+        echo "" >> security-analysis-report.md
+        echo "## 🎯 Risk Assessment" >> security-analysis-report.md
+        echo "" >> security-analysis-report.md
+        
+        # Calculate overall risk score
+        RISK_SCORE=0
+        if [ -f safety-report.json ]; then
+          CRITICAL_VULNS=$(jq '.vulnerabilities | length' safety-report.json 2>/dev/null || echo "0")
+          RISK_SCORE=$((RISK_SCORE + CRITICAL_VULNS * 10))
+        fi
+        
+        if [ -f bandit-report.json ]; then
+          HIGH_ISSUES=$(jq '[.results[] | select(.issue_severity == "HIGH")] | length' bandit-report.json 2>/dev/null || echo "0")
+          MEDIUM_ISSUES=$(jq '[.results[] | select(.issue_severity == "MEDIUM")] | length' bandit-report.json 2>/dev/null || echo "0")
+          RISK_SCORE=$((RISK_SCORE + HIGH_ISSUES * 5 + MEDIUM_ISSUES * 2))
+        fi
+        
+        if [ "$RISK_SCORE" -eq "0" ]; then
+          echo "**Overall Risk Level:** 🟢 **LOW** (Score: $RISK_SCORE)" >> security-analysis-report.md
+        elif [ "$RISK_SCORE" -le "10" ]; then
+          echo "**Overall Risk Level:** 🟡 **MEDIUM** (Score: $RISK_SCORE)" >> security-analysis-report.md
+        else
+          echo "**Overall Risk Level:** 🔴 **HIGH** (Score: $RISK_SCORE)" >> security-analysis-report.md
+        fi
+        
+        echo "" >> security-analysis-report.md
+        echo "## 📊 Actionable Recommendations" >> security-analysis-report.md
+        echo "" >> security-analysis-report.md
+        echo "### Immediate Actions (Priority 1)" >> security-analysis-report.md
+        
+        if [ "$CRITICAL_VULNS" -gt "0" ]; then
+          echo "1. 🚨 **Update vulnerable dependencies** - $CRITICAL_VULNS critical vulnerabilities found" >> security-analysis-report.md
+        fi
+        
+        if [ "$HIGH_ISSUES" -gt "0" ]; then
+          echo "2. 🚨 **Fix high severity security issues** - $HIGH_ISSUES issues require immediate attention" >> security-analysis-report.md
+        fi
+        
+        echo "" >> security-analysis-report.md
+        echo "### Short-term Actions (Priority 2)" >> security-analysis-report.md
+        echo "1. **Code Review:** Review and address medium severity findings" >> security-analysis-report.md
+        echo "2. **Security Training:** Ensure team follows secure coding practices" >> security-analysis-report.md
+        echo "3. **Dependency Management:** Implement automated dependency updates" >> security-analysis-report.md
+        
+        echo "" >> security-analysis-report.md
+        echo "### Long-term Improvements (Priority 3)" >> security-analysis-report.md
+        echo "1. **Security Policies:** Establish security coding standards" >> security-analysis-report.md
+        echo "2. **Continuous Monitoring:** Integrate SAST into development workflow" >> security-analysis-report.md
+        echo "3. **Security Testing:** Implement regular penetration testing" >> security-analysis-report.md
+        echo "4. **Incident Response:** Develop security incident response plan" >> security-analysis-report.md
+        
+        echo "" >> security-analysis-report.md
+        echo "## 📁 Detailed Reports" >> security-analysis-report.md
+        echo "" >> security-analysis-report.md
+        echo "The following detailed reports are available as artifacts:" >> security-analysis-report.md
+        echo "" >> security-analysis-report.md
+        
+        for report_file in *.json *.txt *.html; do
+          if [ -f "$report_file" ]; then
+            echo "- \`$report_file\`" >> security-analysis-report.md
+          fi
+        done
+        
+        echo "" >> security-analysis-report.md
+        echo "---" >> security-analysis-report.md
+        echo "*This report was automatically generated by the Python SAST pipeline.*" >> security-analysis-report.md
+        
+        echo "✅ Comprehensive security analysis report generated"
+
+    - name: Upload SAST results
+      uses: actions/upload-artifact@v3
+      with:
+        name: python-sast-reports-${{ github.run_number }}
+        path: |
+          safety-report.json
+          safety-report.txt
+          safety-full-report.txt
+          safety-policy-report.txt
+          bandit-report.json
+          bandit-report.txt
+          bandit-report.html
+          bandit-config-report.json
+          semgrep-*-report.json
+          semgrep-*-report.txt
+          pip-audit-report.json
+          pip-audit-report.txt
+          pip-audit-requirements.json
+          security-analysis-report.md
+
+    - name: Comment security summary on PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          
+          if (fs.existsSync('security-analysis-report.md')) {
+            const report = fs.readFileSync('security-analysis-report.md', 'utf8');
+            
+            // Truncate report if too long for PR comment
+            const maxLength = 65000;
+            const truncatedReport = report.length > maxLength 
+              ? report.substring(0, maxLength) + '\n\n... (Report truncated. See full report in artifacts)'
+              : report;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: truncatedReport
+            });
+          }
+
+    - name: Upload SARIF results to GitHub Security
+      if: always()
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: results.sarif
+      continue-on-error: true
+
+  # Dependency Analysis
+  dependency-analysis:
+    name: Dependency Security Analysis
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependency analysis tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install safety pip-audit pipdeptree cyclonedx-bom
+
+    - name: Generate dependency tree
+      run: |
+        echo "📦 Generating dependency tree..."
+        
+        # Install project dependencies
+        pip install -r requirements.txt
+        
+        # Generate dependency tree in multiple formats
+        pipdeptree --json-tree > dependency-tree.json
+        pipdeptree > dependency-tree.txt
+        pipdeptree --graph-output png > dependency-graph.png || true
+        
+        echo "✅ Dependency tree generated"
+
+    - name: Generate Software Bill of Materials (SBOM)
+      run: |
+        echo "📋 Generating SBOM..."
+        
+        # Generate CycloneDX SBOM
+        cyclonedx-py -o sbom.json || true
+        cyclonedx-py -o sbom.xml --format xml || true
+        
+        echo "✅ SBOM generated"
+
+    - name: Enhanced dependency vulnerability scanning
+      run: |
+        echo "🔍 Running enhanced dependency vulnerability scanning..."
+        
+        # Safety with different configurations
+        safety check --json --output safety-deps.json || true
+        safety check --full-report --output safety-deps-full.txt || true
+        
+        # pip-audit with different options
+        pip-audit --format=json --output=pip-audit-deps.json || true
+        pip-audit --format=cyclonedx --output=pip-audit-sbom.json || true
+        
+        # Scan requirements files
+        for req_file in requirements*.txt; do
+          if [ -f "$req_file" ]; then
+            echo "Scanning $req_file..."
+            safety check --file "$req_file" --json --output "safety-${req_file%.txt}.json" || true
+            pip-audit --requirement "$req_file" --format=json --output "pip-audit-${req_file%.txt}.json" || true
+          fi
+        done
+        
+        echo "✅ Enhanced dependency scanning completed"
+
+    - name: Check for outdated and insecure packages
+      run: |
+        echo "📊 Checking package status..."
+        
+        # Outdated packages
+        pip list --outdated --format=json > outdated-packages.json || true
+        pip list --outdated > outdated-packages.txt || true
+        
+        # All installed packages
+        pip list --format=json > installed-packages.json
+        pip freeze > requirements-freeze.txt
+        
+        echo "✅ Package status check completed"
+
+    - name: License compliance check
+      run: |
+        echo "⚖️ Checking license compliance..."
+        
+        # Install license checker
+        pip install pip-licenses
+        
+        # Generate license report
+        pip-licenses --format=json --output-file=licenses.json || true
+        pip-licenses --format=plain --output-file=licenses.txt || true
+        pip-licenses --format=html --output-file=licenses.html || true
+        
+        # Check for problematic licenses
+        pip-licenses --format=json | jq -r '.[] | select(.License | test("GPL|AGPL|LGPL")) | "\(.Name): \(.License)"' > problematic-licenses.txt || true
+        
+        echo "✅ License compliance check completed"
+
+    - name: Generate dependency security report
+      run: |
+        echo "📋 Generating dependency security report..."
+        
+        cat > dependency-security-report.md << 'EOF'
+        # 📦 Dependency Security Analysis Report
+        
+        **Generated:** $(date)
+        **Python Version:** ${{ env.PYTHON_VERSION }}
+        **Repository:** ${{ github.repository }}
+        
+        ## 🔍 Vulnerability Analysis
+        
+        ### Safety Scanner Results
+        EOF
+        
+        if [ -f safety-deps.json ]; then
+          SAFETY_VULNS=$(jq '.vulnerabilities | length' safety-deps.json 2>/dev/null || echo "0")
+          echo "- **Vulnerabilities Found:** $SAFETY_VULNS" >> dependency-security-report.md
+          
+          if [ "$SAFETY_VULNS" -gt "0" ]; then
+            echo "- **Status:** 🚨 Vulnerabilities detected" >> dependency-security-report.md
+            echo "" >> dependency-security-report.md
+            echo "#### Vulnerable Packages:" >> dependency-security-report.md
+            jq -r '.vulnerabilities[] | "- **\(.package_name)** \(.installed_version): \(.vulnerability_id)"' safety-deps.json >> dependency-security-report.md || true
+          else
+            echo "- **Status:** ✅ No vulnerabilities found" >> dependency-security-report.md
+          fi
+        fi
+        
+        echo "" >> dependency-security-report.md
+        echo "### pip-audit Scanner Results" >> dependency-security-report.md
+        
+        if [ -f pip-audit-deps.json ]; then
+          PIP_AUDIT_VULNS=$(jq '. | length' pip-audit-deps.json 2>/dev/null || echo "0")
+          echo "- **Vulnerabilities Found:** $PIP_AUDIT_VULNS" >> dependency-security-report.md
+          
+          if [ "$PIP_AUDIT_VULNS" -gt "0" ]; then
+            echo "- **Status:** 🚨 Cross-validation confirms vulnerabilities" >> dependency-security-report.md
+          else
+            echo "- **Status:** ✅ No vulnerabilities found" >> dependency-security-report.md
+          fi
+        fi
+        
+        echo "" >> dependency-security-report.md
+        echo "## 📊 Package Analysis" >> dependency-security-report.md
+        
+        if [ -f outdated-packages.json ]; then
+          OUTDATED_COUNT=$(jq '. | length' outdated-packages.json 2>/dev/null || echo "0")
+          echo "- **Outdated Packages:** $OUTDATED_COUNT" >> dependency-security-report.md
+        fi
+        
+        if [ -f installed-packages.json ]; then
+          TOTAL_PACKAGES=$(jq '. | length' installed-packages.json 2>/dev/null || echo "0")
+          echo "- **Total Packages:** $TOTAL_PACKAGES" >> dependency-security-report.md
+        fi
+        
+        echo "" >> dependency-security-report.md
+        echo "## ⚖️ License Compliance" >> dependency-security-report.md
+        
+        if [ -f problematic-licenses.txt ] && [ -s problematic-licenses.txt ]; then
+          PROBLEMATIC_COUNT=$(wc -l < problematic-licenses.txt)
+          echo "- **Problematic Licenses:** $PROBLEMATIC_COUNT" >> dependency-security-report.md
+          echo "- **Status:** ⚠️ Review required" >> dependency-security-report.md
+          echo "" >> dependency-security-report.md
+          echo "#### Packages with Problematic Licenses:" >> dependency-security-report.md
+          echo '```' >> dependency-security-report.md
+          cat problematic-licenses.txt >> dependency-security-report.md
+          echo '```' >> dependency-security-report.md
+        else
+          echo "- **Status:** ✅ No problematic licenses found" >> dependency-security-report.md
+        fi
+        
+        echo "" >> dependency-security-report.md
+        echo "## 🎯 Recommendations" >> dependency-security-report.md
+        echo "" >> dependency-security-report.md
+        echo "1. **Update Vulnerable Packages:** Address all identified vulnerabilities" >> dependency-security-report.md
+        echo "2. **Regular Updates:** Implement automated dependency updates" >> dependency-security-report.md
+        echo "3. **License Review:** Review and approve all package licenses" >> dependency-security-report.md
+        echo "4. **SBOM Management:** Maintain Software Bill of Materials" >> dependency-security-report.md
+        echo "5. **Monitoring:** Set up continuous dependency monitoring" >> dependency-security-report.md
+        
+        echo "✅ Dependency security report generated"
+
+    - name: Upload dependency analysis results
+      uses: actions/upload-artifact@v3
+      with:
+        name: dependency-analysis-reports-${{ github.run_number }}
+        path: |
+          dependency-tree.json
+          dependency-tree.txt
+          dependency-graph.png
+          sbom.json
+          sbom.xml
+          safety-*.json
+          safety-*.txt
+          pip-audit-*.json
+          outdated-packages.json
+          outdated-packages.txt
+          installed-packages.json
+          requirements-freeze.txt
+          licenses.json
+          licenses.txt
+          licenses.html
+          problematic-licenses.txt
+          dependency-security-report.md
+
+    - name: Dependency Review (on PRs)
+      if: github.event_name == 'pull_request'
+      uses: actions/dependency-review-action@v3
+      with:
+        fail-on-severity: moderate
+        allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Unlicense
+        deny-licenses: GPL-2.0, GPL-3.0, AGPL-1.0, AGPL-3.0
+        comment-summary-in-pr: true

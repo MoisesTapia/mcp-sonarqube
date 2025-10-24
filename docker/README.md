@@ -60,7 +60,7 @@ docker/
 |---------|----------------|-----|------|---------------|-------------|---------|
 | **Streamlit App** | sonarqube-streamlit-app | http://localhost:8501 | 8501 | 8501 | - | Main UI |
 | **SonarQube** | sonarqube-server | http://localhost:9000/sonarqube | 9000 | 9000 | admin / admin | Code Analysis |
-| **MCP Server** | sonarqube-mcp-server | http://localhost:8000 | 8000 | 8000 | - | API Server |
+| **MCP Server** | sonarqube-mcp-server | http://localhost:8001 | 8001 | 8001 | - | API Server |
 | **pgAdmin** | sonarqube-pgadmin | http://localhost:8082 | 8082 | 80 | admin@example.com / admin | DB Admin |
 | **Redis Commander** | sonarqube-redis-commander | http://localhost:8081 | 8081 | 8081 | - | Cache Admin |
 | **Mailhog** | sonarqube-mailhog | http://localhost:8025 | 8025 | 8025 | - | Email Testing |
@@ -78,7 +78,7 @@ docker/
 | **postgres** | sonarqube-postgres | postgres:15-alpine | 5432 | 5432 | sonarqube-mcp | PostgreSQL database for SonarQube |
 | **redis** | sonarqube-redis | redis:7-alpine | 6379 | 6379 | sonarqube-mcp | Redis cache for performance |
 | **sonarqube** | sonarqube-server | sonarqube:10.3-community | 9000 | 9000 | sonarqube-mcp | SonarQube code analysis platform |
-| **mcp-server** | sonarqube-mcp-server | Custom build | 8000 | 8000 | sonarqube-mcp | MCP protocol server |
+| **mcp-server** | sonarqube-mcp-server | Custom build | 8001 | 8001 | sonarqube-mcp | MCP protocol server |
 | **streamlit-app** | sonarqube-streamlit-app | Custom build | 8501 | 8501 | sonarqube-mcp | Streamlit web interface |
 
 #### Development Tools (Development Environment Only)
@@ -240,7 +240,7 @@ Built from `docker/dockerfiles/streamlit.Dockerfile`:
 |------|---------|----------|--------|---------|
 | **8501** | Streamlit App | HTTP | External | Main web interface |
 | **9000** | SonarQube | HTTP | External | Code analysis dashboard |
-| **8000** | MCP Server | HTTP | External | MCP API endpoints |
+| **8001** | MCP Server | HTTP | External | MCP API endpoints |
 | **8082** | pgAdmin | HTTP | External | Database administration |
 | **8081** | Redis Commander | HTTP | External | Cache management |
 | **8025** | Mailhog Web | HTTP | External | Email testing interface |
@@ -269,7 +269,7 @@ services:
 
 | Service | Endpoint | Expected Response |
 |---------|----------|-------------------|
-| MCP Server | http://localhost:8000/health | 200 OK |
+| MCP Server | http://localhost:8001/health | 200 OK |
 | Streamlit App | http://localhost:8501/_stcore/health | 200 OK |
 | SonarQube | http://localhost:9000/sonarqube/api/system/status | 200 OK |
 | PostgreSQL | `pg_isready` command | Success |
@@ -300,12 +300,12 @@ docker compose logs --tail=100 | grep -i error
    # Check what's using specific ports
    netstat -tulpn | grep :8501  # Streamlit
    netstat -tulpn | grep :9000  # SonarQube
-   netstat -tulpn | grep :8000  # MCP Server
+   netstat -tulpn | grep :8001  # MCP Server
    netstat -tulpn | grep :5432  # PostgreSQL
    netstat -tulpn | grep :6379  # Redis
    
    # Or check all our ports at once
-   netstat -tulpn | grep -E ":(8501|9000|8000|8082|8081|8025|5432|6379)"
+   netstat -tulpn | grep -E ":(8501|9000|8001|8082|8081|8025|5432|6379)"
    
    # Change ports in development.yml if conflicts exist
    ```
@@ -320,7 +320,7 @@ docker compose logs --tail=100 | grep -i error
    
    # Test port connectivity
    curl -f http://localhost:8501/_stcore/health  # Streamlit
-   curl -f http://localhost:8000/health          # MCP Server
+   curl -f http://localhost:8001/health          # MCP Server
    curl -f http://localhost:9000/sonarqube/api/system/status  # SonarQube
    ```
 
@@ -419,12 +419,65 @@ docker run --rm -v sonarqube_data:/data -v $(pwd):/backup alpine tar xzf /backup
 - **Purpose**: Pre-configure PostgreSQL server in pgAdmin
 - **Customization**: Add multiple servers or change connection settings
 
+## 📋 Recent Updates and Changes
+
+### Version 1.1.0 - Latest Changes
+
+#### ✅ **Fixed Issues**
+- **MCP Server Port**: Corrected from 8000 to 8001 for consistency across all configurations
+- **Session State Initialization**: Fixed Streamlit session state initialization errors
+- **Deprecation Warnings**: Updated `use_container_width=True` to `width="stretch"` for Streamlit 1.50+
+- **Docker Compose Syntax**: Removed obsolete `version` field from production configuration
+- **URL Consistency**: Fixed MCP server URL references in client configurations
+
+#### 🔧 **Configuration Updates**
+- **Production Environment**: Updated `.env.production` with correct MCP server port (8001)
+- **Docker Compose**: Cleaned up production overrides and commented unused services
+- **Health Checks**: Improved health check endpoints and error handling
+- **Logging**: Enhanced structured logging with better error tracking
+
+#### 🐛 **Bug Fixes**
+- **TypeError in fromisoformat**: Added robust datetime handling for sync status
+- **MCP Connection Recursion**: Fixed infinite recursion in health check methods
+- **Container Networking**: Corrected service name references in Docker network
+- **Permission Issues**: Improved file permission handling with graceful fallbacks
+
+#### 🚀 **Performance Improvements**
+- **Async Operations**: Better async/await handling in MCP client
+- **Error Handling**: More robust error handling with fallback mechanisms
+- **Resource Usage**: Optimized container resource limits and health checks
+
+### Migration Notes
+
+If you're upgrading from a previous version:
+
+1. **Update Environment Files**: 
+   ```bash
+   # Update MCP server port in your .env files
+   sed -i 's/8000/8001/g' docker/environments/.env.development
+   ```
+
+2. **Rebuild Containers**:
+   ```bash
+   docker compose down
+   docker compose build --no-cache
+   docker compose up -d
+   ```
+
+3. **Verify Services**:
+   ```bash
+   # Check all services are healthy
+   docker compose ps
+   curl -f http://localhost:8001/health  # MCP Server (new port)
+   curl -f http://localhost:8501/_stcore/health  # Streamlit
+   ```
+
 ## 🚀 Next Steps
 
 1. **Configure your SonarQube token** in the environment file
 2. **Start the development environment** with the provided commands
 3. **Access the Streamlit interface** at http://localhost:8501
-4. **Explore the API** at http://localhost:8000
+4. **Explore the API** at http://localhost:8001 (updated port)
 5. **Check the troubleshooting section** if you encounter issues
 
 For more detailed information, see the main [README.md](../README.md) and [documentation](../docs/).

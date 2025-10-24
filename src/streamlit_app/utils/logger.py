@@ -24,19 +24,23 @@ class StreamlitLogger:
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(logging.INFO)
         
-        # File handler (if logs directory exists)
+        # File handler (if logs directory exists and is writable)
         log_dir = os.getenv("LOG_DIR", "/app/logs")
         if os.path.exists(log_dir):
-            log_file = os.path.join(log_dir, "streamlit_app.log")
-            file_handler = logging.FileHandler(log_file)
-            file_handler.setLevel(logging.DEBUG)
-            
-            # File formatter with more details
-            file_formatter = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(module)s:%(lineno)d - %(message)s'
-            )
-            file_handler.setFormatter(file_formatter)
-            self.logger.addHandler(file_handler)
+            try:
+                log_file = os.path.join(log_dir, "streamlit_app.log")
+                file_handler = logging.FileHandler(log_file)
+                file_handler.setLevel(logging.DEBUG)
+                
+                # File formatter with more details
+                file_formatter = logging.Formatter(
+                    '%(asctime)s - %(name)s - %(levelname)s - %(module)s:%(lineno)d - %(message)s'
+                )
+                file_handler.setFormatter(file_formatter)
+                self.logger.addHandler(file_handler)
+            except (PermissionError, OSError) as e:
+                # If we can't write to log file, just use console logging
+                print(f"Warning: Cannot write to log file {log_file}: {e}. Using console logging only.")
         
         # Console formatter
         console_formatter = logging.Formatter(

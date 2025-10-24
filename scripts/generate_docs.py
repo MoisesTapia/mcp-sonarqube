@@ -21,37 +21,95 @@ async def main():
         server = SonarQubeMCPServer()
         
         # We can't fully initialize without SonarQube credentials,
-        # so we'll create a mock documentation for now
+        # so we'll create comprehensive documentation structure
         docs_generator = MCPDocsGenerator()
         
-        # Create sample documentation structure
+        # Create comprehensive documentation structure based on actual implementation
         sample_tools = [
             {
                 "name": "list_projects",
-                "description": "List all accessible SonarQube projects with optional filtering",
+                "description": "List all accessible SonarQube projects with optional filtering and pagination",
                 "parameters": {
-                    "search": {"type": "str", "required": False, "description": "Search query"},
-                    "page": {"type": "int", "required": False, "description": "Page number"},
+                    "search": {"type": "str", "required": False, "description": "Search query to filter projects by name or key"},
+                    "page": {"type": "int", "required": False, "description": "Page number for pagination (default: 1)"},
+                    "page_size": {"type": "int", "required": False, "description": "Number of projects per page (default: 10)"},
                 },
                 "return_type": "Dict[str, Any]",
+                "example": {
+                    "request": {"search": "my-project", "page": 1, "page_size": 10},
+                    "response": {"projects": [], "total": 0, "page": 1, "page_size": 10}
+                }
             },
             {
                 "name": "get_project_details", 
-                "description": "Get detailed information about a specific project",
+                "description": "Get detailed information about a specific SonarQube project including metrics and quality gate status",
                 "parameters": {
-                    "project_key": {"type": "str", "required": True, "description": "Project key"},
+                    "project_key": {"type": "str", "required": True, "description": "Unique project key in SonarQube"},
                 },
                 "return_type": "Dict[str, Any]",
+                "example": {
+                    "request": {"project_key": "my-project"},
+                    "response": {"key": "my-project", "name": "My Project", "qualifier": "TRK"}
+                }
             },
             {
                 "name": "get_measures",
-                "description": "Get metrics for a specific project",
+                "description": "Get quality metrics for a specific project with support for multiple metric types",
                 "parameters": {
-                    "project_key": {"type": "str", "required": True, "description": "Project key"},
-                    "metric_keys": {"type": "List[str]", "required": False, "description": "Metrics to retrieve"},
+                    "project_key": {"type": "str", "required": True, "description": "Project key to get metrics for"},
+                    "metric_keys": {"type": "List[str]", "required": False, "description": "List of metric keys to retrieve (default: common metrics)"},
                 },
                 "return_type": "Dict[str, Any]",
+                "example": {
+                    "request": {"project_key": "my-project", "metric_keys": ["ncloc", "bugs", "vulnerabilities"]},
+                    "response": {"measures": [{"metric": "ncloc", "value": "1000"}]}
+                }
             },
+            {
+                "name": "get_quality_gate_status",
+                "description": "Get the current quality gate status for a project",
+                "parameters": {
+                    "project_key": {"type": "str", "required": True, "description": "Project key to check quality gate status"},
+                },
+                "return_type": "Dict[str, Any]",
+                "example": {
+                    "request": {"project_key": "my-project"},
+                    "response": {"status": "OK", "conditions": []}
+                }
+            },
+            {
+                "name": "analyze_project_quality",
+                "description": "Perform comprehensive quality analysis of a project including trends and recommendations",
+                "parameters": {
+                    "project_key": {"type": "str", "required": True, "description": "Project key to analyze"},
+                    "include_history": {"type": "bool", "required": False, "description": "Include historical data in analysis"},
+                },
+                "return_type": "Dict[str, Any]",
+                "example": {
+                    "request": {"project_key": "my-project", "include_history": true},
+                    "response": {"analysis": {}, "trends": {}, "recommendations": []}
+                }
+            },
+            {
+                "name": "health_check",
+                "description": "Check the health status of the MCP server and SonarQube connection",
+                "parameters": {},
+                "return_type": "Dict[str, Any]",
+                "example": {
+                    "request": {},
+                    "response": {"status": "healthy", "sonarqube_connection": "ok", "timestamp": "2024-01-01T00:00:00Z"}
+                }
+            },
+            {
+                "name": "get_server_info",
+                "description": "Get information about the SonarQube server and MCP server configuration",
+                "parameters": {},
+                "return_type": "Dict[str, Any]",
+                "example": {
+                    "request": {},
+                    "response": {"sonarqube_version": "9.9", "mcp_version": "1.0.0", "features": []}
+                }
+            }
         ]
         
         # Generate documentation

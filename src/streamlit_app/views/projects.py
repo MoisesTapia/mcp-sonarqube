@@ -388,7 +388,7 @@ def _render_project_comparison(service: SonarQubeService, projects: List[Dict[st
     st.subheader("📊 Comparison Table")
     st.dataframe(
         comparison_df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "Coverage": st.column_config.NumberColumn(
@@ -421,7 +421,7 @@ def _render_project_comparison(service: SonarQubeService, projects: List[Dict[st
             barmode="group"
         )
         fig_issues.update_layout(xaxis_tickangle=-45)
-        st.plotly_chart(fig_issues, use_container_width=True)
+        st.plotly_chart(fig_issues, width="stretch")
     
     with col2:
         # Coverage and size comparison
@@ -451,7 +451,7 @@ def _render_project_comparison(service: SonarQubeService, projects: List[Dict[st
             barmode="group"
         )
         
-        st.plotly_chart(fig_metrics, use_container_width=True)
+        st.plotly_chart(fig_metrics, width="stretch")
 
 
 def _render_bookmarks(projects: List[Dict[str, Any]]):
@@ -479,7 +479,7 @@ def _render_bookmarks(projects: List[Dict[str, Any]]):
         st.write("")  # Spacing
         st.write("")  # Spacing
         
-        if st.button("➕ Add Bookmark", use_container_width=True):
+        if st.button("➕ Add Bookmark", width="stretch"):
             if project_to_bookmark not in bookmarked_projects:
                 bookmarked_projects.append(project_to_bookmark)
                 SessionManager.set_page_state("projects", {

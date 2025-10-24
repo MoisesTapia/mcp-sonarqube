@@ -306,7 +306,7 @@ class ChatInterface:
                     title="Cache Performance",
                     color_discrete_map={"Hits": "green", "Misses": "red"}
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
             
             # Detailed cache info
             with st.expander("🗄️ Detailed Cache Information"):
@@ -440,7 +440,7 @@ class ChatInterface:
             # Interactive table
             st.dataframe(
                 df,
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "key": st.column_config.TextColumn("Project Key", width="medium"),
                     "name": st.column_config.TextColumn("Name", width="large"),
@@ -457,7 +457,7 @@ class ChatInterface:
                     names=visibility_counts.index,
                     title="Project Visibility Distribution"
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
         else:
             st.info("No projects found")
     
@@ -562,11 +562,11 @@ class ChatInterface:
                     height=400
                 )
                 
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
             
             # All metrics table
             with st.expander("📈 All Metrics Details", expanded=False):
-                st.dataframe(df, use_container_width=True)
+                st.dataframe(df, width="stretch")
         else:
             st.json(result)
     
@@ -607,12 +607,12 @@ class ChatInterface:
                         "INFO": "blue"
                     }
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
             
             # Issues table
             st.dataframe(
                 df,
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "key": st.column_config.TextColumn("Issue Key", width="small"),
                     "rule": st.column_config.TextColumn("Rule", width="medium"),
@@ -666,11 +666,11 @@ class ChatInterface:
                 # Show failed conditions first
                 if failed_conditions:
                     st.error("❌ Failed Conditions")
-                    st.dataframe(pd.DataFrame(failed_conditions), use_container_width=True)
+                    st.dataframe(pd.DataFrame(failed_conditions), width="stretch")
                 
                 if passed_conditions:
                     st.success("✅ Passed Conditions")
-                    st.dataframe(pd.DataFrame(passed_conditions), use_container_width=True)
+                    st.dataframe(pd.DataFrame(passed_conditions), width="stretch")
             
             # Full details
             with st.expander("🔍 Complete Quality Gate Details", expanded=False):
@@ -709,7 +709,7 @@ class ChatInterface:
                         "LOW": "green"
                     }
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
             
             # Security categories
             if "securityCategory" in df.columns:
@@ -721,12 +721,12 @@ class ChatInterface:
                     title="Security Categories",
                     labels={"x": "Count", "y": "Category"}
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
             
             # Hotspots table
             st.dataframe(
                 df,
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "key": st.column_config.TextColumn("Hotspot Key", width="small"),
                     "securityCategory": st.column_config.TextColumn("Category", width="medium"),
@@ -1425,7 +1425,7 @@ class ChatInterface:
                         f"🚀 {suggestion['text'][:30]}{'...' if len(suggestion['text']) > 30 else ''}",
                         key=f"priority_{i}",
                         help=suggestion['description'],
-                        use_container_width=True
+                        width="stretch"
                     ):
                         self._execute_suggestion(suggestion['text'])
         

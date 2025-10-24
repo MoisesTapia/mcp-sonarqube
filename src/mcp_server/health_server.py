@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class HealthCheckServer:
     """Simple HTTP server for health checks."""
     
-    def __init__(self, port: int = 8000, mcp_server=None):
+    def __init__(self, port: int = 8001, mcp_server=None):
         """Initialize health check server."""
         self.port = port
         self.mcp_server = mcp_server

@@ -36,7 +36,7 @@ def render():
         st.subheader("Overview")
     
     with col2:
-        if st.button("🔄 Refresh Data", use_container_width=True):
+        if st.button("🔄 Refresh Data", width="stretch"):
             SessionManager.clear_cache()
             st.rerun()
     
@@ -201,7 +201,7 @@ def render():
                 color_discrete_map=colors
             )
             fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(fig_pie, use_container_width=True)
+            st.plotly_chart(fig_pie, width="stretch")
         
         with col2:
             # Issues overview bar chart
@@ -223,7 +223,7 @@ def render():
                 }
             )
             fig_bar.update_layout(showlegend=False)
-            st.plotly_chart(fig_bar, use_container_width=True)
+            st.plotly_chart(fig_bar, width="stretch")
     
     # Failed Quality Gates Alert
     failed_projects = projects_df[projects_df["quality_gate_status"].isin(["ERROR", "WARN"])]
@@ -333,7 +333,7 @@ def render():
         
         st.dataframe(
             display_df,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             column_config={
                 "Quality Gate": st.column_config.TextColumn(

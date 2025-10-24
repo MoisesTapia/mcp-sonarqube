@@ -51,20 +51,38 @@ class MCPIntegrationService:
         self._sync_stop_event = threading.Event()
         self._last_sync_time = None
         
-        # Initialize session state
-        if "mcp_integration_state" not in st.session_state:
-            st.session_state.mcp_integration_state = {
+        # Initialize session state safely
+        self._ensure_session_state()
+        
+        # Set up event listeners
+        try:
+            self.mcp_client.add_event_listener("connection_status_changed", self._on_connection_changed)
+            self.mcp_client.add_event_listener("tool_call_success", self._on_tool_success)
+            self.mcp_client.add_event_listener("tool_call_error", self._on_tool_error)
+        except Exception as e:
+            self.logger.warning(f"Could not set up MCP event listeners: {e}")
+    
+    def _ensure_session_state(self):
+        """Ensure session state is properly initialized."""
+        try:
+            if "mcp_integration_state" not in st.session_state:
+                st.session_state.mcp_integration_state = {
+                    "synced_data": {},
+                    "sync_status": "stopped",
+                    "last_sync": None,
+                    "sync_errors": [],
+                    "subscriptions": {}
+                }
+        except Exception as e:
+            self.logger.warning(f"Could not initialize session state: {e}")
+            # Create a fallback state
+            self._fallback_state = {
                 "synced_data": {},
                 "sync_status": "stopped",
                 "last_sync": None,
                 "sync_errors": [],
                 "subscriptions": {}
             }
-        
-        # Set up event listeners
-        self.mcp_client.add_event_listener("connection_status_changed", self._on_connection_changed)
-        self.mcp_client.add_event_listener("tool_call_success", self._on_tool_success)
-        self.mcp_client.add_event_listener("tool_call_error", self._on_tool_error)
     
     def _on_connection_changed(self, data: Dict[str, Any]) -> None:
         """Handle MCP connection status changes."""
@@ -117,12 +135,16 @@ class MCPIntegrationService:
         )
         
         # Store in session state
-        st.session_state.mcp_integration_state["subscriptions"][data_key] = {
-            "page_id": page_id,
-            "tool_name": tool_name,
-            "parameters": parameters,
-            "sync_interval": sync_interval or self.sync_config.sync_interval
-        }
+        try:
+            if hasattr(st.session_state, 'mcp_integration_state'):
+                st.session_state.mcp_integration_state["subscriptions"][data_key] = {
+                    "page_id": page_id,
+                    "tool_name": tool_name,
+                    "parameters": parameters,
+                    "sync_interval": sync_interval or self.sync_config.sync_interval
+                }
+        except Exception as e:
+            self.logger.warning(f"Could not store subscription in session state: {e}")
         
         # Perform initial data fetch
         self._fetch_data_async(data_key)
@@ -134,13 +156,21 @@ class MCPIntegrationService:
             if page_id in self._sync_subscriptions:
                 self._sync_subscriptions[page_id].discard(data_key)
             self._synced_data.pop(data_key, None)
-            st.session_state.mcp_integration_state["subscriptions"].pop(data_key, None)
+            try:
+                if hasattr(st.session_state, 'mcp_integration_state'):
+                    st.session_state.mcp_integration_state["subscriptions"].pop(data_key, None)
+            except Exception:
+                pass
         else:
             # Remove all subscriptions for page
             if page_id in self._sync_subscriptions:
                 for key in list(self._sync_subscriptions[page_id]):
                     self._synced_data.pop(key, None)
-                    st.session_state.mcp_integration_state["subscriptions"].pop(key, None)
+                    try:
+                        if hasattr(st.session_state, 'mcp_integration_state'):
+                            st.session_state.mcp_integration_state["subscriptions"].pop(key, None)
+                    except Exception:
+                        pass
                 del self._sync_subscriptions[page_id]
     
     def get_synced_data(self, data_key: str) -> Optional[SyncedData]:
@@ -225,7 +255,11 @@ class MCPIntegrationService:
         self._sync_thread = threading.Thread(target=self._sync_loop, daemon=True)
         self._sync_thread.start()
         
-        st.session_state.mcp_integration_state["sync_status"] = "running"
+        try:
+            if hasattr(st.session_state, 'mcp_integration_state'):
+                st.session_state.mcp_integration_state["sync_status"] = "running"
+        except Exception:
+            pass
         self.logger.info("Started MCP data synchronization")
     
     def stop_sync(self) -> None:
@@ -234,7 +268,11 @@ class MCPIntegrationService:
             self._sync_stop_event.set()
             self._sync_thread.join(timeout=5)
         
-        st.session_state.mcp_integration_state["sync_status"] = "stopped"
+        try:
+            if hasattr(st.session_state, 'mcp_integration_state'):
+                st.session_state.mcp_integration_state["sync_status"] = "stopped"
+        except Exception:
+            pass
         self.logger.info("Stopped MCP data synchronization")
     
     def _sync_loop(self) -> None:
@@ -256,30 +294,58 @@ class MCPIntegrationService:
                         self._fetch_data_async(data_key)
                 
                 self._last_sync_time = datetime.now()
-                st.session_state.mcp_integration_state["last_sync"] = self._last_sync_time.isoformat()
+                try:
+                    if hasattr(st.session_state, 'mcp_integration_state'):
+                        st.session_state.mcp_integration_state["last_sync"] = self._last_sync_time.isoformat()
+                except Exception:
+                    pass
                 
                 # Wait for next sync interval
                 self._sync_stop_event.wait(self.sync_config.sync_interval)
                 
             except Exception as e:
                 self.logger.error(f"Error in sync loop: {e}")
-                st.session_state.mcp_integration_state["sync_errors"].append({
-                    "error": str(e),
-                    "timestamp": datetime.now().isoformat()
-                })
+                try:
+                    if hasattr(st.session_state, 'mcp_integration_state'):
+                        st.session_state.mcp_integration_state["sync_errors"].append({
+                            "error": str(e),
+                            "timestamp": datetime.now().isoformat()
+                        })
+                except Exception:
+                    pass
                 time.sleep(self.sync_config.retry_delay)
     
     def get_sync_status(self) -> Dict[str, Any]:
         """Get synchronization status information."""
-        return {
-            "status": st.session_state.mcp_integration_state.get("sync_status", "stopped"),
-            "last_sync": self._last_sync_time,
-            "subscriptions_count": len(self._synced_data),
-            "active_subscriptions": list(self._synced_data.keys()),
-            "sync_interval": self.sync_config.sync_interval,
-            "auto_refresh": self.sync_config.auto_refresh,
-            "errors": st.session_state.mcp_integration_state.get("sync_errors", [])
-        }
+        try:
+            state = getattr(st.session_state, 'mcp_integration_state', None)
+            if state is None:
+                # Use fallback state if session state is not available
+                state = getattr(self, '_fallback_state', {
+                    "sync_status": "stopped",
+                    "sync_errors": []
+                })
+            
+            return {
+                "status": state.get("sync_status", "stopped"),
+                "last_sync": self._last_sync_time,
+                "subscriptions_count": len(self._synced_data),
+                "active_subscriptions": list(self._synced_data.keys()),
+                "sync_interval": self.sync_config.sync_interval,
+                "auto_refresh": self.sync_config.auto_refresh,
+                "errors": state.get("sync_errors", [])
+            }
+        except Exception as e:
+            self.logger.warning(f"Could not get sync status: {e}")
+            return {
+                "status": "error",
+                "last_sync": None,
+                "subscriptions_count": 0,
+                "active_subscriptions": [],
+                "sync_interval": self.sync_config.sync_interval,
+                "auto_refresh": self.sync_config.auto_refresh,
+                "errors": [f"Session state error: {e}"]
+            }
     
     def configure_sync(self, **kwargs) -> None:
         """Configure synchronization settings."""
@@ -294,7 +360,11 @@ class MCPIntegrationService:
     
     def clear_sync_errors(self) -> None:
         """Clear synchronization errors."""
-        st.session_state.mcp_integration_state["sync_errors"] = []
+        try:
+            if hasattr(st.session_state, 'mcp_integration_state'):
+                st.session_state.mcp_integration_state["sync_errors"] = []
+        except Exception:
+            pass
     
     # Convenience methods for common data types
     

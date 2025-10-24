@@ -1,0 +1,699 @@
+name: JavaScript/TypeScript Code Quality & Standards
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - '**/*.js'
+      - '**/*.ts'
+      - '**/*.jsx'
+      - '**/*.tsx'
+      - '**/package.json'
+      - '**/tsconfig.json'
+      - '**/.eslintrc*'
+      - '**/.prettierrc*'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '**/*.js'
+      - '**/*.ts'
+      - '**/*.jsx'
+      - '**/*.tsx'
+      - '**/package.json'
+      - '**/tsconfig.json'
+      - '**/.eslintrc*'
+      - '**/.prettierrc*'
+
+env:
+  NODE_VERSION: '18'
+
+jobs:
+  # Code Formatting and Style
+  formatting:
+    name: Code Formatting & Style
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: Install formatting tools
+      run: |
+        echo "🎨 Installing code formatting tools..."
+        npm install -g prettier eslint @typescript-eslint/parser @typescript-eslint/eslint-plugin
+        npm install -g eslint-config-prettier eslint-plugin-prettier
+        echo "✅ Formatting tools installed"
+
+    - name: Install project dependencies
+      run: |
+        if [ -f "package.json" ]; then
+          npm ci || npm install
+        else
+          echo "⚠️ No package.json found, using global tools only"
+        fi
+
+    - name: Run Prettier (Code Formatting Check)
+      run: |
+        echo "🎨 Checking code formatting with Prettier..."
+        
+        # Check if there are JS/TS files to format
+        if find . -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx" | grep -q .; then
+          # Create Prettier config if it doesn't exist
+          if [ ! -f ".prettierrc" ] && [ ! -f ".prettierrc.json" ] && [ ! -f "prettier.config.js" ]; then
+            cat > .prettierrc.json << 'EOF'
+        {
+          "semi": true,
+          "trailingComma": "es5",
+          "singleQuote": true,
+          "printWidth": 80,
+          "tabWidth": 2,
+          "useTabs": false
+        }
+        EOF
+          fi
+          
+          # Run Prettier check
+          prettier --check "**/*.{js,ts,jsx,tsx}" > prettier-report.txt 2>&1 || true
+          
+          echo "✅ Prettier formatting check completed"
+        else
+          echo "⚠️ No JavaScript/TypeScript files found for formatting check"
+        fi
+
+    - name: Generate formatting report
+      if: failure()
+      run: |
+        echo "📋 Generating formatting report..."
+        
+        cat > formatting-report.md << 'EOF'
+        # 🎨 JavaScript/TypeScript Code Formatting Report
+        
+        **Generated:** $(date)
+        **Status:** ❌ Formatting issues found
+        
+        ## Issues Found
+        
+        ### Prettier Formatting Issues
+        EOF
+        
+        if [ -f prettier-report.txt ]; then
+          echo '```' >> formatting-report.md
+          cat prettier-report.txt >> formatting-report.md
+          echo '```' >> formatting-report.md
+        fi
+        
+        echo "" >> formatting-report.md
+        echo "## 🔧 How to Fix" >> formatting-report.md
+        echo "" >> formatting-report.md
+        echo "Run the following commands to fix formatting issues:" >> formatting-report.md
+        echo '```bash' >> formatting-report.md
+        echo "# Fix formatting" >> formatting-report.md
+        echo "prettier --write \"**/*.{js,ts,jsx,tsx}\"" >> formatting-report.md
+        echo '```' >> formatting-report.md
+
+    - name: Upload formatting report
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: js-formatting-report-${{ github.run_number }}
+        path: formatting-report.md
+
+  # Linting and Code Analysis
+  linting:
+    name: Linting & Code Analysis
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: Install linting tools
+      run: |
+        echo "🔍 Installing linting tools..."
+        npm install -g eslint @typescript-eslint/parser @typescript-eslint/eslint-plugin
+        npm install -g eslint-plugin-import eslint-plugin-node eslint-plugin-promise
+        npm install -g jshint jslint standard
+        echo "✅ Linting tools installed"
+
+    - name: Install project dependencies
+      run: |
+        if [ -f "package.json" ]; then
+          npm ci || npm install
+        fi
+
+    - name: Run ESLint (Comprehensive Linting)
+      run: |
+        echo "⚡ Running ESLint comprehensive analysis..."
+        
+        # Check if there are JS/TS files to lint
+        if find . -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx" | grep -q .; then
+          # Create ESLint config if it doesn't exist
+          if [ ! -f ".eslintrc.js" ] && [ ! -f ".eslintrc.json" ] && [ ! -f "eslint.config.js" ]; then
+            cat > .eslintrc.json << 'EOF'
+        {
+          "env": {
+            "browser": true,
+            "es2021": true,
+            "node": true
+          },
+          "extends": [
+            "eslint:recommended",
+            "@typescript-eslint/recommended"
+          ],
+          "parser": "@typescript-eslint/parser",
+          "parserOptions": {
+            "ecmaVersion": "latest",
+            "sourceType": "module"
+          },
+          "plugins": [
+            "@typescript-eslint",
+            "import",
+            "node",
+            "promise"
+          ],
+          "rules": {
+            "no-console": "warn",
+            "no-unused-vars": "error",
+            "no-undef": "error",
+            "prefer-const": "error",
+            "no-var": "error"
+          }
+        }
+        EOF
+          fi
+          
+          # Run ESLint with different output formats
+          npx eslint . --ext .js,.ts,.jsx,.tsx --format json --output-file eslint-report.json || true
+          npx eslint . --ext .js,.ts,.jsx,.tsx --format unix --output-file eslint-report.txt || true
+          npx eslint . --ext .js,.ts,.jsx,.tsx --format html --output-file eslint-report.html || true
+          
+          echo "✅ ESLint analysis completed"
+        else
+          echo "⚠️ No JavaScript/TypeScript files found for linting"
+        fi
+
+    - name: Run JSHint (Alternative Linter)
+      run: |
+        echo "🔍 Running JSHint analysis..."
+        
+        # Check for JavaScript files specifically
+        if find . -name "*.js" | grep -q .; then
+          # Create JSHint config
+          cat > .jshintrc << 'EOF'
+        {
+          "esversion": 2021,
+          "node": true,
+          "browser": true,
+          "strict": true,
+          "globalstrict": true,
+          "undef": true,
+          "unused": true,
+          "latedef": true,
+          "nonew": true,
+          "trailing": true,
+          "maxlen": 120
+        }
+        EOF
+          
+          # Run JSHint
+          jshint --reporter=json . > jshint-report.json || true
+          jshint . > jshint-report.txt || true
+          
+          echo "✅ JSHint analysis completed"
+        else
+          echo "⚠️ No JavaScript files found for JSHint analysis"
+        fi
+
+    - name: Run StandardJS (Style Guide)
+      run: |
+        echo "📏 Running StandardJS style guide check..."
+        
+        # Check for JavaScript files
+        if find . -name "*.js" | grep -q .; then
+          # Run StandardJS
+          standard --verbose > standard-report.txt 2>&1 || true
+          
+          echo "✅ StandardJS check completed"
+        else
+          echo "⚠️ No JavaScript files found for StandardJS check"
+        fi
+
+    - name: Generate comprehensive linting report
+      run: |
+        echo "📊 Generating comprehensive linting report..."
+        
+        cat > js-linting-report.md << 'EOF'
+        # 🔍 JavaScript/TypeScript Code Quality Analysis Report
+        
+        **Generated:** $(date)
+        **Node.js Version:** ${{ env.NODE_VERSION }}
+        
+        ## 📋 Quality Metrics Summary
+        
+        ### ESLint Analysis
+        EOF
+        
+        if [ -f eslint-report.json ]; then
+          ESLINT_ERRORS=$(jq '[.[] | .errorCount] | add // 0' eslint-report.json 2>/dev/null || echo "0")
+          ESLINT_WARNINGS=$(jq '[.[] | .warningCount] | add // 0' eslint-report.json 2>/dev/null || echo "0")
+          
+          echo "- **Errors:** $ESLINT_ERRORS" >> js-linting-report.md
+          echo "- **Warnings:** $ESLINT_WARNINGS" >> js-linting-report.md
+          
+          if [ "$ESLINT_ERRORS" -eq "0" ] && [ "$ESLINT_WARNINGS" -eq "0" ]; then
+            echo "- **Status:** ✅ No issues found" >> js-linting-report.md
+          elif [ "$ESLINT_ERRORS" -gt "0" ]; then
+            echo "- **Status:** ❌ Errors found - fix required" >> js-linting-report.md
+          else
+            echo "- **Status:** ⚠️ Warnings found - review recommended" >> js-linting-report.md
+          fi
+        else
+          echo "- **Status:** ℹ️ No JavaScript/TypeScript files found" >> js-linting-report.md
+        fi
+        
+        echo "" >> js-linting-report.md
+        echo "### JSHint Analysis" >> js-linting-report.md
+        
+        if [ -f jshint-report.json ]; then
+          JSHINT_ERRORS=$(jq '. | length' jshint-report.json 2>/dev/null || echo "0")
+          echo "- **Issues Found:** $JSHINT_ERRORS" >> js-linting-report.md
+          
+          if [ "$JSHINT_ERRORS" -eq "0" ]; then
+            echo "- **Status:** ✅ No issues found" >> js-linting-report.md
+          else
+            echo "- **Status:** ⚠️ Issues found - review recommended" >> js-linting-report.md
+          fi
+        else
+          echo "- **Status:** ℹ️ No JavaScript files found" >> js-linting-report.md
+        fi
+        
+        echo "" >> js-linting-report.md
+        echo "### StandardJS Style Guide" >> js-linting-report.md
+        
+        if [ -f standard-report.txt ] && [ -s standard-report.txt ]; then
+          echo "- **Status:** ⚠️ Style guide violations found" >> js-linting-report.md
+        else
+          echo "- **Status:** ✅ Follows StandardJS style guide" >> js-linting-report.md
+        fi
+        
+        echo "" >> js-linting-report.md
+        echo "## 📊 Detailed Analysis" >> js-linting-report.md
+        
+        # Add top ESLint issues
+        if [ -f eslint-report.txt ] && [ -s eslint-report.txt ]; then
+          echo "" >> js-linting-report.md
+          echo "### Top ESLint Issues" >> js-linting-report.md
+          echo '```' >> js-linting-report.md
+          head -20 eslint-report.txt >> js-linting-report.md
+          echo '```' >> js-linting-report.md
+        fi
+        
+        echo "" >> js-linting-report.md
+        echo "## 🎯 Recommendations" >> js-linting-report.md
+        echo "" >> js-linting-report.md
+        echo "### Code Quality Improvements" >> js-linting-report.md
+        echo "1. **Fix Errors:** Address all ESLint errors before merging" >> js-linting-report.md
+        echo "2. **Review Warnings:** Consider fixing ESLint warnings" >> js-linting-report.md
+        echo "3. **Consistent Style:** Follow established coding standards" >> js-linting-report.md
+        echo "4. **Modern JavaScript:** Use ES6+ features and best practices" >> js-linting-report.md
+        echo "5. **Code Reviews:** Implement peer review process" >> js-linting-report.md
+        
+        echo "✅ Comprehensive linting report generated"
+
+    - name: Upload linting results
+      uses: actions/upload-artifact@v3
+      with:
+        name: js-linting-reports-${{ github.run_number }}
+        path: |
+          eslint-report.json
+          eslint-report.txt
+          eslint-report.html
+          jshint-report.json
+          jshint-report.txt
+          standard-report.txt
+          js-linting-report.md
+
+    - name: Comment quality summary on PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          
+          if (fs.existsSync('js-linting-report.md')) {
+            const report = fs.readFileSync('js-linting-report.md', 'utf8');
+            
+            // Create summary for PR comment
+            let summary = `## 🔍 JavaScript/TypeScript Quality Summary\n\n`;
+            
+            // Extract metrics from report
+            const errorMatch = report.match(/\*\*Errors:\*\* (\d+)/);
+            const warningMatch = report.match(/\*\*Warnings:\*\* (\d+)/);
+            
+            if (errorMatch && warningMatch) {
+              const errors = parseInt(errorMatch[1]);
+              const warnings = parseInt(warningMatch[1]);
+              
+              summary += `**ESLint Results:** ${errors} errors, ${warnings} warnings\n\n`;
+              
+              if (errors === 0 && warnings === 0) {
+                summary += `**Quality Level:** 🟢 Excellent\n\n`;
+              } else if (errors === 0) {
+                summary += `**Quality Level:** 🟡 Good (warnings only)\n\n`;
+              } else {
+                summary += `**Quality Level:** 🔴 Needs Improvement\n\n`;
+              }
+            }
+            
+            summary += `<details>\n<summary>📊 Detailed Quality Report</summary>\n\n${report}\n\n</details>`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+          }
+
+  # Type Checking (TypeScript)
+  type-checking:
+    name: TypeScript Type Checking
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: Install TypeScript tools
+      run: |
+        echo "🔍 Installing TypeScript tools..."
+        npm install -g typescript @typescript-eslint/parser @typescript-eslint/eslint-plugin
+        npm install -g tsc-watch ts-node
+        echo "✅ TypeScript tools installed"
+
+    - name: Install project dependencies
+      run: |
+        if [ -f "package.json" ]; then
+          npm ci || npm install
+        fi
+
+    - name: Run TypeScript Compiler (tsc)
+      run: |
+        echo "🔍 Running TypeScript compiler checks..."
+        
+        # Check if there are TypeScript files
+        if find . -name "*.ts" -o -name "*.tsx" | grep -q .; then
+          # Create tsconfig.json if it doesn't exist
+          if [ ! -f "tsconfig.json" ]; then
+            cat > tsconfig.json << 'EOF'
+        {
+          "compilerOptions": {
+            "target": "ES2020",
+            "module": "commonjs",
+            "lib": ["ES2020", "DOM"],
+            "outDir": "./dist",
+            "rootDir": "./src",
+            "strict": true,
+            "esModuleInterop": true,
+            "skipLibCheck": true,
+            "forceConsistentCasingInFileNames": true,
+            "declaration": true,
+            "declarationMap": true,
+            "sourceMap": true,
+            "noImplicitAny": true,
+            "noImplicitReturns": true,
+            "noImplicitThis": true,
+            "noUnusedLocals": true,
+            "noUnusedParameters": true
+          },
+          "include": ["src/**/*", "**/*.ts", "**/*.tsx"],
+          "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+        }
+        EOF
+          fi
+          
+          # Run TypeScript compiler
+          tsc --noEmit --pretty > tsc-report.txt 2>&1 || true
+          
+          # Generate detailed type checking report
+          tsc --noEmit --listFiles > tsc-files.txt 2>&1 || true
+          
+          echo "✅ TypeScript compiler check completed"
+        else
+          echo "⚠️ No TypeScript files found for type checking"
+        fi
+
+    - name: Run TypeScript ESLint
+      run: |
+        echo "🔍 Running TypeScript-specific ESLint rules..."
+        
+        if find . -name "*.ts" -o -name "*.tsx" | grep -q .; then
+          # Create TypeScript-specific ESLint config
+          cat > .eslintrc.typescript.json << 'EOF'
+        {
+          "parser": "@typescript-eslint/parser",
+          "plugins": ["@typescript-eslint"],
+          "extends": [
+            "eslint:recommended",
+            "@typescript-eslint/recommended",
+            "@typescript-eslint/recommended-requiring-type-checking"
+          ],
+          "parserOptions": {
+            "ecmaVersion": 2020,
+            "sourceType": "module",
+            "project": "./tsconfig.json"
+          },
+          "rules": {
+            "@typescript-eslint/no-unused-vars": "error",
+            "@typescript-eslint/no-explicit-any": "warn",
+            "@typescript-eslint/explicit-function-return-type": "warn",
+            "@typescript-eslint/no-implicit-any-catch": "error",
+            "@typescript-eslint/prefer-nullish-coalescing": "error",
+            "@typescript-eslint/prefer-optional-chain": "error"
+          }
+        }
+        EOF
+          
+          # Run TypeScript ESLint
+          npx eslint . --config .eslintrc.typescript.json --ext .ts,.tsx \
+            --format json --output-file typescript-eslint-report.json || true
+          npx eslint . --config .eslintrc.typescript.json --ext .ts,.tsx \
+            --format unix --output-file typescript-eslint-report.txt || true
+          
+          echo "✅ TypeScript ESLint analysis completed"
+        fi
+
+    - name: Generate TypeScript analysis report
+      run: |
+        echo "📊 Generating TypeScript analysis report..."
+        
+        cat > typescript-analysis-report.md << 'EOF'
+        # 🔍 TypeScript Type Checking Analysis Report
+        
+        **Generated:** $(date)
+        **TypeScript Version:** $(tsc --version || echo "Not available")
+        
+        ## 📋 Type Checking Results
+        
+        ### TypeScript Compiler (tsc)
+        EOF
+        
+        if [ -f tsc-report.txt ]; then
+          # Count errors and warnings
+          TSC_ERRORS=$(grep -c "error TS" tsc-report.txt 2>/dev/null || echo "0")
+          TSC_WARNINGS=$(grep -c "warning TS" tsc-report.txt 2>/dev/null || echo "0")
+          
+          echo "- **Type Errors:** $TSC_ERRORS" >> typescript-analysis-report.md
+          echo "- **Type Warnings:** $TSC_WARNINGS" >> typescript-analysis-report.md
+          
+          if [ "$TSC_ERRORS" -eq "0" ] && [ "$TSC_WARNINGS" -eq "0" ]; then
+            echo "- **Status:** ✅ No type issues found" >> typescript-analysis-report.md
+          elif [ "$TSC_ERRORS" -gt "0" ]; then
+            echo "- **Status:** ❌ Type errors found - fix required" >> typescript-analysis-report.md
+          else
+            echo "- **Status:** ⚠️ Type warnings found - review recommended" >> typescript-analysis-report.md
+          fi
+        else
+          echo "- **Status:** ℹ️ No TypeScript files found" >> typescript-analysis-report.md
+        fi
+        
+        echo "" >> typescript-analysis-report.md
+        echo "### TypeScript ESLint" >> typescript-analysis-report.md
+        
+        if [ -f typescript-eslint-report.json ]; then
+          TS_ESLINT_ERRORS=$(jq '[.[] | .errorCount] | add // 0' typescript-eslint-report.json 2>/dev/null || echo "0")
+          TS_ESLINT_WARNINGS=$(jq '[.[] | .warningCount] | add // 0' typescript-eslint-report.json 2>/dev/null || echo "0")
+          
+          echo "- **ESLint Errors:** $TS_ESLINT_ERRORS" >> typescript-analysis-report.md
+          echo "- **ESLint Warnings:** $TS_ESLINT_WARNINGS" >> typescript-analysis-report.md
+          
+          if [ "$TS_ESLINT_ERRORS" -eq "0" ] && [ "$TS_ESLINT_WARNINGS" -eq "0" ]; then
+            echo "- **Status:** ✅ No ESLint issues found" >> typescript-analysis-report.md
+          elif [ "$TS_ESLINT_ERRORS" -gt "0" ]; then
+            echo "- **Status:** ❌ ESLint errors found" >> typescript-analysis-report.md
+          else
+            echo "- **Status:** ⚠️ ESLint warnings found" >> typescript-analysis-report.md
+          fi
+        fi
+        
+        echo "" >> typescript-analysis-report.md
+        echo "## 📊 Detailed Issues" >> typescript-analysis-report.md
+        
+        if [ -f tsc-report.txt ] && [ -s tsc-report.txt ]; then
+          echo "" >> typescript-analysis-report.md
+          echo "### TypeScript Compiler Issues" >> typescript-analysis-report.md
+          echo '```' >> typescript-analysis-report.md
+          head -30 tsc-report.txt >> typescript-analysis-report.md
+          echo '```' >> typescript-analysis-report.md
+        fi
+        
+        echo "" >> typescript-analysis-report.md
+        echo "## 🎯 TypeScript Best Practices" >> typescript-analysis-report.md
+        echo "" >> typescript-analysis-report.md
+        echo "1. **Strict Mode:** Enable strict type checking in tsconfig.json" >> typescript-analysis-report.md
+        echo "2. **Explicit Types:** Add explicit type annotations for function parameters and returns" >> typescript-analysis-report.md
+        echo "3. **Avoid Any:** Minimize use of 'any' type, prefer specific types" >> typescript-analysis-report.md
+        echo "4. **Null Safety:** Use strict null checks and optional chaining" >> typescript-analysis-report.md
+        echo "5. **Interface Design:** Use interfaces for object shapes and contracts" >> typescript-analysis-report.md
+        
+        echo "✅ TypeScript analysis report generated"
+
+    - name: Upload TypeScript analysis results
+      uses: actions/upload-artifact@v3
+      with:
+        name: typescript-analysis-reports-${{ github.run_number }}
+        path: |
+          tsc-report.txt
+          tsc-files.txt
+          typescript-eslint-report.json
+          typescript-eslint-report.txt
+          typescript-analysis-report.md
+          tsconfig.json
+
+  # Code Complexity Analysis
+  complexity-analysis:
+    name: Code Complexity Analysis
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: Install complexity analysis tools
+      run: |
+        echo "📊 Installing complexity analysis tools..."
+        npm install -g complexity-report jscpd plato
+        npm install -g eslint-plugin-complexity
+        echo "✅ Complexity analysis tools installed"
+
+    - name: Run Complexity Report
+      run: |
+        echo "📊 Running complexity analysis..."
+        
+        # Check if there are JS/TS files to analyze
+        if find . -name "*.js" -o -name "*.ts" | grep -q .; then
+          # Run complexity analysis
+          complexity-report --format json --output complexity-report.json . || true
+          complexity-report --format plain --output complexity-report.txt . || true
+          
+          echo "✅ Complexity analysis completed"
+        else
+          echo "⚠️ No JavaScript/TypeScript files found for complexity analysis"
+        fi
+
+    - name: Run Code Duplication Analysis
+      run: |
+        echo "🔍 Running code duplication analysis..."
+        
+        if find . -name "*.js" -o -name "*.ts" | grep -q .; then
+          # Run jscpd for duplicate code detection
+          jscpd --format json --output ./jscpd-report.json . || true
+          jscpd --format html --output ./jscpd-report.html . || true
+          
+          echo "✅ Code duplication analysis completed"
+        fi
+
+    - name: Generate complexity report
+      run: |
+        echo "📊 Generating complexity analysis report..."
+        
+        cat > js-complexity-report.md << 'EOF'
+        # 📊 JavaScript/TypeScript Code Complexity Report
+        
+        **Generated:** $(date)
+        
+        ## 🎯 Complexity Metrics Overview
+        
+        ### Cyclomatic Complexity
+        EOF
+        
+        if [ -f complexity-report.txt ]; then
+          echo '```' >> js-complexity-report.md
+          head -20 complexity-report.txt >> js-complexity-report.md
+          echo '```' >> js-complexity-report.md
+        else
+          echo "ℹ️ No complexity data available" >> js-complexity-report.md
+        fi
+        
+        echo "" >> js-complexity-report.md
+        echo "### Code Duplication" >> js-complexity-report.md
+        
+        if [ -f jscpd-report.json ]; then
+          DUPLICATION_PERCENT=$(jq '.statistics.total.percentage // 0' jscpd-report.json 2>/dev/null || echo "0")
+          DUPLICATED_LINES=$(jq '.statistics.total.duplicatedLines // 0' jscpd-report.json 2>/dev/null || echo "0")
+          
+          echo "- **Duplication Percentage:** ${DUPLICATION_PERCENT}%" >> js-complexity-report.md
+          echo "- **Duplicated Lines:** $DUPLICATED_LINES" >> js-complexity-report.md
+          
+          if (( $(echo "$DUPLICATION_PERCENT > 10" | bc -l) )); then
+            echo "- **Status:** ⚠️ High duplication detected" >> js-complexity-report.md
+          elif (( $(echo "$DUPLICATION_PERCENT > 5" | bc -l) )); then
+            echo "- **Status:** 🟡 Moderate duplication" >> js-complexity-report.md
+          else
+            echo "- **Status:** ✅ Low duplication" >> js-complexity-report.md
+          fi
+        else
+          echo "ℹ️ No duplication data available" >> js-complexity-report.md
+        fi
+        
+        echo "" >> js-complexity-report.md
+        echo "## 🎯 Complexity Reduction Recommendations" >> js-complexity-report.md
+        echo "" >> js-complexity-report.md
+        echo "1. **Refactor Complex Functions:** Break down functions with high cyclomatic complexity" >> js-complexity-report.md
+        echo "2. **Extract Common Code:** Eliminate code duplication through refactoring" >> js-complexity-report.md
+        echo "3. **Simplify Logic:** Reduce nested conditions and loops" >> js-complexity-report.md
+        echo "4. **Modular Design:** Split large modules into smaller, focused components" >> js-complexity-report.md
+        echo "5. **Design Patterns:** Apply appropriate patterns to reduce complexity" >> js-complexity-report.md
+        
+        echo "✅ Complexity analysis report generated"
+
+    - name: Upload complexity analysis results
+      uses: actions/upload-artifact@v3
+      with:
+        name: js-complexity-reports-${{ github.run_number }}
+        path: |
+          complexity-report.json
+          complexity-report.txt
+          jscpd-report.json
+          jscpd-report.html
+          js-complexity-report.md

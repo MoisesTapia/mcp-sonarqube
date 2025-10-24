@@ -73,7 +73,7 @@ class RealtimeDataComponent:
                 })
             
             if project_rows:
-                st.dataframe(project_rows, use_container_width=True)
+                st.dataframe(project_rows, width="stretch")
             
             return projects
     
@@ -324,7 +324,7 @@ class RealtimeDataComponent:
                     })
                 
                 if issue_rows:
-                    st.dataframe(issue_rows, use_container_width=True)
+                    st.dataframe(issue_rows, width="stretch")
             
             return issues[:limit]
     
@@ -394,7 +394,16 @@ def render_sync_controls(page_id: str, container: st.container = None) -> None:
         
         with col2:
             if sync_status["last_sync"]:
-                last_sync = datetime.fromisoformat(sync_status["last_sync"])
+                last_sync_value = sync_status["last_sync"]
+                # Handle both datetime objects and ISO strings
+                if isinstance(last_sync_value, str):
+                    last_sync = datetime.fromisoformat(last_sync_value)
+                elif isinstance(last_sync_value, datetime):
+                    last_sync = last_sync_value
+                else:
+                    st.info("🕐 Invalid sync time")
+                    return
+                
                 age = (datetime.now() - last_sync).total_seconds()
                 st.info(f"🕐 Last sync: {int(age)}s ago")
             else:

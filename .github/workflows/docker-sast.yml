@@ -1,0 +1,484 @@
+name: Docker SAST (Static Application Security Testing)
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - '**/Dockerfile*'
+      - '**/docker-compose*.yml'
+      - '**/docker-compose*.yaml'
+      - '**/.dockerignore'
+      - '**/Containerfile*'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '**/Dockerfile*'
+      - '**/docker-compose*.yml'
+      - '**/docker-compose*.yaml'
+      - '**/.dockerignore'
+      - '**/Containerfile*'
+  schedule:
+    # Run SAST weekly on Fridays at 4 AM UTC
+    - cron: '0 4 * * 5'
+
+env:
+  DOCKER_BUILDKIT: 1
+
+jobs:
+  # Docker Security Scanning
+  docker-security-scan:
+    name: Docker Security Analysis
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Install Docker security scanning tools
+      run: |
+        echo "🔧 Installing Docker security scanning tools..."
+        
+        # Install Trivy
+        sudo apt-get update
+        sudo apt-get install wget apt-transport-https gnupg lsb-release
+        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+        echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+        sudo apt-get update
+        sudo apt-get install trivy
+        
+        # Install Hadolint
+        wget -O hadolint https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64
+        chmod +x hadolint
+        sudo mv hadolint /usr/local/bin/
+        
+        # Install Docker Bench Security
+        git clone https://github.com/docker/docker-bench-security.git
+        
+        # Install Dockle
+        wget -O dockle.deb https://github.com/goodwithtech/dockle/releases/latest/download/dockle_$(curl -s https://api.github.com/repos/goodwithtech/dockle/releases/latest | grep tag_name | cut -d '"' -f 4 | sed 's/v//')_Linux-64bit.deb
+        sudo dpkg -i dockle.deb || sudo apt-get install -f
+        
+        # Install Grype
+        curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+        
+        echo "✅ Docker security tools installed"
+
+    - name: Find Docker files
+      id: find-docker-files
+      run: |
+        echo "🔍 Finding Docker files..."
+        
+        # Find all Docker-related files
+        DOCKERFILES=$(find . -name "Dockerfile*" -o -name "Containerfile*" | head -20)
+        COMPOSE_FILES=$(find . -name "docker-compose*.yml" -o -name "docker-compose*.yaml" | head -10)
+        
+        echo "dockerfiles<<EOF" >> $GITHUB_OUTPUT
+        echo "$DOCKERFILES" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        echo "compose_files<<EOF" >> $GITHUB_OUTPUT
+        echo "$COMPOSE_FILES" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        if [ -n "$DOCKERFILES" ] || [ -n "$COMPOSE_FILES" ]; then
+          echo "has_docker_files=true" >> $GITHUB_OUTPUT
+          echo "✅ Found Docker files to analyze"
+        else
+          echo "has_docker_files=false" >> $GITHUB_OUTPUT
+          echo "⚠️ No Docker files found"
+        fi
+
+    - name: Run Hadolint (Dockerfile Linter & Security)
+      if: steps.find-docker-files.outputs.has_docker_files == 'true'
+      run: |
+        echo "🔍 Running Hadolint security analysis..."
+        
+        # Create Hadolint config for security focus
+        cat > .hadolint.yaml << 'EOF'
+        failure-threshold: warning
+        format: json
+        ignored:
+          - DL3008  # Pin versions in apt get install (can be too strict)
+        trustedRegistries:
+          - docker.io
+          - gcr.io
+          - quay.io
+          - registry.access.redhat.com
+        EOF
+        
+        # Analyze each Dockerfile
+        echo '${{ steps.find-docker-files.outputs.dockerfiles }}' | while IFS= read -r dockerfile; do
+          if [ -n "$dockerfile" ] && [ -f "$dockerfile" ]; then
+            echo "Analyzing: $dockerfile"
+            
+            # Run Hadolint with different formats
+            hadolint --format json "$dockerfile" > "hadolint-$(basename $dockerfile).json" || true
+            hadolint --format tty "$dockerfile" > "hadolint-$(basename $dockerfile).txt" || true
+            hadolint --format sarif "$dockerfile" > "hadolint-$(basename $dockerfile).sarif" || true
+          fi
+        done
+        
+        # Combine all JSON reports
+        find . -name "hadolint-*.json" -exec cat {} \; | jq -s '.' > hadolint-combined.json || echo "[]" > hadolint-combined.json
+        
+        echo "✅ Hadolint analysis completed"
+
+    - name: Run Trivy (Container Image Vulnerability Scanner)
+      if: steps.find-docker-files.outputs.has_docker_files == 'true'
+      run: |
+        echo "🔍 Running Trivy vulnerability scanning..."
+        
+        # Scan Dockerfiles for misconfigurations
+        echo '${{ steps.find-docker-files.outputs.dockerfiles }}' | while IFS= read -r dockerfile; do
+          if [ -n "$dockerfile" ] && [ -f "$dockerfile" ]; then
+            echo "Scanning: $dockerfile"
+            
+            # Scan for misconfigurations
+            trivy config --format json --output "trivy-config-$(basename $dockerfile).json" "$dockerfile" || true
+            trivy config --format table --output "trivy-config-$(basename $dockerfile).txt" "$dockerfile" || true
+            trivy config --format sarif --output "trivy-config-$(basename $dockerfile).sarif" "$dockerfile" || true
+          fi
+        done
+        
+        # Scan docker-compose files
+        echo '${{ steps.find-docker-files.outputs.compose_files }}' | while IFS= read -r composefile; do
+          if [ -n "$composefile" ] && [ -f "$composefile" ]; then
+            echo "Scanning: $composefile"
+            trivy config --format json --output "trivy-compose-$(basename $composefile).json" "$composefile" || true
+          fi
+        done
+        
+        echo "✅ Trivy configuration scanning completed"
+
+    - name: Run Dockle (Container Image Security)
+      if: steps.find-docker-files.outputs.has_docker_files == 'true'
+      run: |
+        echo "🔍 Running Dockle security analysis..."
+        
+        # Build and scan images if possible
+        echo '${{ steps.find-docker-files.outputs.dockerfiles }}' | while IFS= read -r dockerfile; do
+          if [ -n "$dockerfile" ] && [ -f "$dockerfile" ]; then
+            echo "Analyzing: $dockerfile"
+            
+            # Try to build image for analysis (with timeout)
+            IMAGE_NAME="security-scan-$(basename $dockerfile | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g')"
+            
+            timeout 300 docker build -f "$dockerfile" -t "$IMAGE_NAME" . || {
+              echo "⚠️ Could not build image from $dockerfile, skipping Dockle scan"
+              continue
+            }
+            
+            # Run Dockle security scan
+            dockle --format json --output "dockle-$(basename $dockerfile).json" "$IMAGE_NAME" || true
+            dockle --format table --output "dockle-$(basename $dockerfile).txt" "$IMAGE_NAME" || true
+            
+            # Clean up image
+            docker rmi "$IMAGE_NAME" || true
+          fi
+        done
+        
+        echo "✅ Dockle analysis completed"
+
+    - name: Run Grype (Vulnerability Scanner)
+      if: steps.find-docker-files.outputs.has_docker_files == 'true'
+      run: |
+        echo "🔍 Running Grype vulnerability scanning..."
+        
+        # Scan built images with Grype
+        echo '${{ steps.find-docker-files.outputs.dockerfiles }}' | while IFS= read -r dockerfile; do
+          if [ -n "$dockerfile" ] && [ -f "$dockerfile" ]; then
+            echo "Analyzing: $dockerfile"
+            
+            # Try to build image for vulnerability scanning
+            IMAGE_NAME="grype-scan-$(basename $dockerfile | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g')"
+            
+            timeout 300 docker build -f "$dockerfile" -t "$IMAGE_NAME" . || {
+              echo "⚠️ Could not build image from $dockerfile, skipping Grype scan"
+              continue
+            }
+            
+            # Run Grype vulnerability scan
+            grype "$IMAGE_NAME" -o json > "grype-$(basename $dockerfile).json" || true
+            grype "$IMAGE_NAME" -o table > "grype-$(basename $dockerfile).txt" || true
+            grype "$IMAGE_NAME" -o sarif > "grype-$(basename $dockerfile).sarif" || true
+            
+            # Clean up image
+            docker rmi "$IMAGE_NAME" || true
+          fi
+        done
+        
+        echo "✅ Grype vulnerability scanning completed"
+
+    - name: Run Docker Bench Security
+      if: steps.find-docker-files.outputs.has_docker_files == 'true'
+      run: |
+        echo "🔍 Running Docker Bench Security..."
+        
+        cd docker-bench-security
+        sudo ./docker-bench-security.sh -l /tmp/docker-bench.log || true
+        
+        # Copy results
+        cp /tmp/docker-bench.log ../docker-bench-security.log || true
+        
+        echo "✅ Docker Bench Security completed"
+
+    - name: Generate comprehensive Docker security report
+      if: steps.find-docker-files.outputs.has_docker_files == 'true'
+      run: |
+        echo "📊 Generating comprehensive Docker security report..."
+        
+        cat > docker-security-analysis-report.md << 'EOF'
+        # 🐳 Docker SAST Security Analysis Report
+        
+        **Generated:** $(date)
+        **Repository:** ${{ github.repository }}
+        **Branch:** ${{ github.ref_name }}
+        **Commit:** ${{ github.sha }}
+        
+        ## 📋 Executive Summary
+        
+        This report contains comprehensive Static Application Security Testing (SAST) results for Docker including:
+        - **Dockerfile Security:** Hadolint security analysis
+        - **Configuration Security:** Trivy misconfiguration detection
+        - **Image Security:** Dockle container security analysis
+        - **Vulnerability Scanning:** Grype vulnerability assessment
+        - **Runtime Security:** Docker Bench Security evaluation
+        
+        ## 🔍 Security Analysis Results
+        
+        ### Hadolint (Dockerfile Security)
+        EOF
+        
+        # Analyze Hadolint results
+        if [ -f hadolint-combined.json ]; then
+          HADOLINT_ERRORS=$(jq '[.[] | select(.level == "error")] | length' hadolint-combined.json 2>/dev/null || echo "0")
+          HADOLINT_WARNINGS=$(jq '[.[] | select(.level == "warning")] | length' hadolint-combined.json 2>/dev/null || echo "0")
+          HADOLINT_INFO=$(jq '[.[] | select(.level == "info")] | length' hadolint-combined.json 2>/dev/null || echo "0")
+          
+          echo "- **Errors:** $HADOLINT_ERRORS" >> docker-security-analysis-report.md
+          echo "- **Warnings:** $HADOLINT_WARNINGS" >> docker-security-analysis-report.md
+          echo "- **Info:** $HADOLINT_INFO" >> docker-security-analysis-report.md
+          
+          if [ "$HADOLINT_ERRORS" -gt "0" ]; then
+            echo "- **Status:** 🚨 Critical issues found" >> docker-security-analysis-report.md
+          elif [ "$HADOLINT_WARNINGS" -gt "0" ]; then
+            echo "- **Status:** ⚠️ Warnings found - review recommended" >> docker-security-analysis-report.md
+          else
+            echo "- **Status:** ✅ No security issues found" >> docker-security-analysis-report.md
+          fi
+        else
+          echo "- **Status:** ℹ️ No Dockerfile analysis available" >> docker-security-analysis-report.md
+        fi
+        
+        echo "" >> docker-security-analysis-report.md
+        echo "### Trivy (Configuration Security)" >> docker-security-analysis-report.md
+        
+        # Count Trivy findings
+        TRIVY_HIGH=0
+        TRIVY_MEDIUM=0
+        TRIVY_LOW=0
+        
+        for file in trivy-config-*.json; do
+          if [ -f "$file" ]; then
+            HIGH=$(jq '[.Results[]?.Misconfigurations[]? | select(.Severity == "HIGH")] | length' "$file" 2>/dev/null || echo "0")
+            MEDIUM=$(jq '[.Results[]?.Misconfigurations[]? | select(.Severity == "MEDIUM")] | length' "$file" 2>/dev/null || echo "0")
+            LOW=$(jq '[.Results[]?.Misconfigurations[]? | select(.Severity == "LOW")] | length' "$file" 2>/dev/null || echo "0")
+            
+            TRIVY_HIGH=$((TRIVY_HIGH + HIGH))
+            TRIVY_MEDIUM=$((TRIVY_MEDIUM + MEDIUM))
+            TRIVY_LOW=$((TRIVY_LOW + LOW))
+          fi
+        done
+        
+        echo "- **High Severity:** $TRIVY_HIGH" >> docker-security-analysis-report.md
+        echo "- **Medium Severity:** $TRIVY_MEDIUM" >> docker-security-analysis-report.md
+        echo "- **Low Severity:** $TRIVY_LOW" >> docker-security-analysis-report.md
+        
+        if [ "$TRIVY_HIGH" -gt "0" ]; then
+          echo "- **Status:** 🚨 High severity misconfigurations found" >> docker-security-analysis-report.md
+        elif [ "$TRIVY_MEDIUM" -gt "0" ]; then
+          echo "- **Status:** ⚠️ Medium severity issues found" >> docker-security-analysis-report.md
+        else
+          echo "- **Status:** ✅ No critical misconfigurations found" >> docker-security-analysis-report.md
+        fi
+        
+        echo "" >> docker-security-analysis-report.md
+        echo "### Grype (Vulnerability Assessment)" >> docker-security-analysis-report.md
+        
+        # Count Grype vulnerabilities
+        GRYPE_CRITICAL=0
+        GRYPE_HIGH=0
+        GRYPE_MEDIUM=0
+        
+        for file in grype-*.json; do
+          if [ -f "$file" ]; then
+            CRITICAL=$(jq '[.matches[]? | select(.vulnerability.severity == "Critical")] | length' "$file" 2>/dev/null || echo "0")
+            HIGH=$(jq '[.matches[]? | select(.vulnerability.severity == "High")] | length' "$file" 2>/dev/null || echo "0")
+            MEDIUM=$(jq '[.matches[]? | select(.vulnerability.severity == "Medium")] | length' "$file" 2>/dev/null || echo "0")
+            
+            GRYPE_CRITICAL=$((GRYPE_CRITICAL + CRITICAL))
+            GRYPE_HIGH=$((GRYPE_HIGH + HIGH))
+            GRYPE_MEDIUM=$((GRYPE_MEDIUM + MEDIUM))
+          fi
+        done
+        
+        echo "- **Critical Vulnerabilities:** $GRYPE_CRITICAL" >> docker-security-analysis-report.md
+        echo "- **High Vulnerabilities:** $GRYPE_HIGH" >> docker-security-analysis-report.md
+        echo "- **Medium Vulnerabilities:** $GRYPE_MEDIUM" >> docker-security-analysis-report.md
+        
+        if [ "$GRYPE_CRITICAL" -gt "0" ]; then
+          echo "- **Status:** 🚨 Critical vulnerabilities found" >> docker-security-analysis-report.md
+        elif [ "$GRYPE_HIGH" -gt "0" ]; then
+          echo "- **Status:** ⚠️ High severity vulnerabilities found" >> docker-security-analysis-report.md
+        else
+          echo "- **Status:** ✅ No critical vulnerabilities found" >> docker-security-analysis-report.md
+        fi
+        
+        echo "" >> docker-security-analysis-report.md
+        echo "## 🎯 Risk Assessment" >> docker-security-analysis-report.md
+        echo "" >> docker-security-analysis-report.md
+        
+        # Calculate overall risk score
+        RISK_SCORE=0
+        RISK_SCORE=$((RISK_SCORE + HADOLINT_ERRORS * 5))
+        RISK_SCORE=$((RISK_SCORE + TRIVY_HIGH * 8))
+        RISK_SCORE=$((RISK_SCORE + GRYPE_CRITICAL * 10))
+        RISK_SCORE=$((RISK_SCORE + GRYPE_HIGH * 6))
+        
+        if [ "$RISK_SCORE" -eq "0" ]; then
+          echo "**Overall Risk Level:** 🟢 **LOW** (Score: $RISK_SCORE)" >> docker-security-analysis-report.md
+        elif [ "$RISK_SCORE" -le "30" ]; then
+          echo "**Overall Risk Level:** 🟡 **MEDIUM** (Score: $RISK_SCORE)" >> docker-security-analysis-report.md
+        else
+          echo "**Overall Risk Level:** 🔴 **HIGH** (Score: $RISK_SCORE)" >> docker-security-analysis-report.md
+        fi
+        
+        echo "" >> docker-security-analysis-report.md
+        echo "## 📊 Recommendations" >> docker-security-analysis-report.md
+        echo "" >> docker-security-analysis-report.md
+        echo "### Immediate Actions" >> docker-security-analysis-report.md
+        echo "1. **Fix Critical Issues:** Address all critical and high severity findings" >> docker-security-analysis-report.md
+        echo "2. **Update Base Images:** Use latest secure base images" >> docker-security-analysis-report.md
+        echo "3. **Review Configurations:** Fix Dockerfile security misconfigurations" >> docker-security-analysis-report.md
+        echo "4. **Patch Vulnerabilities:** Update vulnerable packages in containers" >> docker-security-analysis-report.md
+        echo "" >> docker-security-analysis-report.md
+        echo "### Long-term Improvements" >> docker-security-analysis-report.md
+        echo "1. **Multi-stage Builds:** Use multi-stage builds to reduce attack surface" >> docker-security-analysis-report.md
+        echo "2. **Non-root Users:** Run containers as non-root users" >> docker-security-analysis-report.md
+        echo "3. **Minimal Images:** Use distroless or minimal base images" >> docker-security-analysis-report.md
+        echo "4. **Security Scanning:** Integrate container scanning into CI/CD pipeline" >> docker-security-analysis-report.md
+        echo "5. **Runtime Security:** Implement runtime security monitoring" >> docker-security-analysis-report.md
+        
+        echo "✅ Docker security analysis report generated"
+
+    - name: Upload Docker SAST results
+      if: steps.find-docker-files.outputs.has_docker_files == 'true'
+      uses: actions/upload-artifact@v3
+      with:
+        name: docker-sast-reports-${{ github.run_number }}
+        path: |
+          hadolint-*.json
+          hadolint-*.txt
+          hadolint-*.sarif
+          hadolint-combined.json
+          trivy-config-*.json
+          trivy-config-*.txt
+          trivy-config-*.sarif
+          trivy-compose-*.json
+          dockle-*.json
+          dockle-*.txt
+          grype-*.json
+          grype-*.txt
+          grype-*.sarif
+          docker-bench-security.log
+          docker-security-analysis-report.md
+
+    - name: Upload SARIF results to GitHub Security
+      if: steps.find-docker-files.outputs.has_docker_files == 'true'
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: |
+          hadolint-*.sarif
+          trivy-config-*.sarif
+          grype-*.sarif
+      continue-on-error: true
+
+    - name: Comment Docker security summary on PR
+      if: github.event_name == 'pull_request' && steps.find-docker-files.outputs.has_docker_files == 'true'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          
+          if (fs.existsSync('docker-security-analysis-report.md')) {
+            const report = fs.readFileSync('docker-security-analysis-report.md', 'utf8');
+            
+            // Create summary for PR comment
+            let summary = `## 🐳 Docker Security Summary\n\n`;
+            
+            // Add risk assessment
+            if (report.includes('🔴 **HIGH**')) {
+              summary += `**Risk Level:** 🔴 HIGH - Immediate action required\n\n`;
+            } else if (report.includes('🟡 **MEDIUM**')) {
+              summary += `**Risk Level:** 🟡 MEDIUM - Review recommended\n\n`;
+            } else {
+              summary += `**Risk Level:** 🟢 LOW - No critical issues\n\n`;
+            }
+            
+            summary += `<details>\n<summary>📊 Detailed Docker Security Analysis</summary>\n\n${report}\n\n</details>`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+          }
+
+  # Docker Compose Security Analysis
+  docker-compose-analysis:
+    name: Docker Compose Security Analysis
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.message, 'docker-compose') || contains(github.event.pull_request.title, 'docker-compose')
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Docker Compose security tools
+      run: |
+        echo "🔧 Installing Docker Compose security tools..."
+        
+        # Install docker-compose-validator (if available)
+        pip install docker-compose-validator || echo "docker-compose-validator not available"
+        
+        # Install yamllint for YAML validation
+        pip install yamllint
+        
+        echo "✅ Docker Compose security tools installed"
+
+    - name: Validate Docker Compose files
+      run: |
+        echo "🔍 Validating Docker Compose files..."
+        
+        find . -name "docker-compose*.yml" -o -name "docker-compose*.yaml" | while IFS= read -r composefile; do
+          if [ -n "$composefile" ] && [ -f "$composefile" ]; then
+            echo "Validating: $composefile"
+            
+            # YAML syntax validation
+            yamllint -f parsable "$composefile" > "yamllint-$(basename $composefile).txt" || true
+            
+            # Docker Compose validation
+            docker-compose -f "$composefile" config --quiet || echo "Docker Compose validation failed for $composefile"
+          fi
+        done
+        
+        echo "✅ Docker Compose validation completed"
+
+    - name: Upload Docker Compose analysis results
+      uses: actions/upload-artifact@v3
+      with:
+        name: docker-compose-analysis-${{ github.run_number }}
+        path: |
+          yamllint-*.txt

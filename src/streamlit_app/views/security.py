@@ -242,7 +242,7 @@ def render_vulnerability_prioritization(analyzer: SecurityAnalyzer, project_key:
                 "Low (0-39)": "#44ff44"
             }
         )
-        st.plotly_chart(fig_risk, use_container_width=True)
+        st.plotly_chart(fig_risk, width="stretch")
     
     with col2:
         # Category distribution
@@ -257,7 +257,7 @@ def render_vulnerability_prioritization(analyzer: SecurityAnalyzer, project_key:
             title="Vulnerabilities by Category"
         )
         fig_category.update_layout(xaxis_tickangle=45)
-        st.plotly_chart(fig_category, use_container_width=True)
+        st.plotly_chart(fig_category, width="stretch")
     
     # Top priority hotspots table
     st.subheader("🔥 Top Priority Hotspots")
@@ -287,7 +287,7 @@ def render_vulnerability_prioritization(analyzer: SecurityAnalyzer, project_key:
                 return 'background-color: #e8f5e8'
         
         styled_df = df.style.applymap(color_risk_score, subset=['Risk Score'])
-        st.dataframe(styled_df, use_container_width=True)
+        st.dataframe(styled_df, width="stretch")
 
 
 def render_security_trends(analyzer: SecurityAnalyzer, project_key: str):
@@ -331,7 +331,7 @@ def render_security_trends(analyzer: SecurityAnalyzer, project_key: str):
         hovermode='x unified'
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def render_security_alerts():

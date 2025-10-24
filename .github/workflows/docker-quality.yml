@@ -1,0 +1,621 @@
+name: Docker Code Quality & Standards
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - '**/Dockerfile*'
+      - '**/docker-compose*.yml'
+      - '**/docker-compose*.yaml'
+      - '**/.dockerignore'
+      - '**/Containerfile*'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '**/Dockerfile*'
+      - '**/docker-compose*.yml'
+      - '**/docker-compose*.yaml'
+      - '**/.dockerignore'
+      - '**/Containerfile*'
+
+env:
+  DOCKER_BUILDKIT: 1
+
+jobs:
+  # Dockerfile Linting and Best Practices
+  dockerfile-linting:
+    name: Dockerfile Linting & Best Practices
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Docker linting tools
+      run: |
+        echo "🔧 Installing Docker linting tools..."
+        
+        # Install Hadolint (Dockerfile linter)
+        wget -O hadolint https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64
+        chmod +x hadolint
+        sudo mv hadolint /usr/local/bin/
+        
+        # Install dockerfile_lint
+        npm install -g dockerfile_lint
+        
+        # Install dockerfilelint
+        npm install -g dockerfilelint
+        
+        # Install yamllint for docker-compose files
+        pip install yamllint
+        
+        echo "✅ Docker linting tools installed"
+
+    - name: Find Docker files
+      id: find-docker-files
+      run: |
+        echo "🔍 Finding Docker files..."
+        
+        # Find all Docker-related files
+        DOCKERFILES=$(find . -name "Dockerfile*" -o -name "Containerfile*" | head -20)
+        COMPOSE_FILES=$(find . -name "docker-compose*.yml" -o -name "docker-compose*.yaml" | head -10)
+        DOCKERIGNORE_FILES=$(find . -name ".dockerignore" | head -10)
+        
+        echo "dockerfiles<<EOF" >> $GITHUB_OUTPUT
+        echo "$DOCKERFILES" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        echo "compose_files<<EOF" >> $GITHUB_OUTPUT
+        echo "$COMPOSE_FILES" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        echo "dockerignore_files<<EOF" >> $GITHUB_OUTPUT
+        echo "$DOCKERIGNORE_FILES" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        if [ -n "$DOCKERFILES" ] || [ -n "$COMPOSE_FILES" ]; then
+          echo "has_docker_files=true" >> $GITHUB_OUTPUT
+          echo "✅ Found Docker files to analyze"
+        else
+          echo "has_docker_files=false" >> $GITHUB_OUTPUT
+          echo "⚠️ No Docker files found"
+        fi
+
+    - name: Run Hadolint (Comprehensive Dockerfile Linting)
+      if: steps.find-docker-files.outputs.has_docker_files == 'true'
+      run: |
+        echo "🔍 Running Hadolint comprehensive linting..."
+        
+        # Create comprehensive Hadolint config
+        cat > .hadolint.yaml << 'EOF'
+        failure-threshold: info
+        format: json
+        ignored: []
+        trustedRegistries:
+          - docker.io
+          - gcr.io
+          - quay.io
+          - registry.access.redhat.com
+          - ghcr.io
+        override:
+          error:
+            - DL3002  # Last user should not be root
+            - DL3008  # Pin versions in apt get install
+            - DL3009  # Delete the apt-get lists after installing something
+            - DL3015  # Avoid additional packages by specifying --no-install-recommends
+            - DL3025  # Use arguments JSON notation for CMD and ENTRYPOINT arguments
+          warning:
+            - DL3007  # Using latest is prone to errors
+            - DL3016  # Pin versions in npm
+            - DL3018  # Pin versions in apk add
+            - DL3019  # Use the --no-cache switch
+          info:
+            - DL3006  # Always tag the version of an image explicitly
+            - DL3020  # Use COPY instead of ADD for files and folders
+        EOF
+        
+        # Analyze each Dockerfile
+        echo '${{ steps.find-docker-files.outputs.dockerfiles }}' | while IFS= read -r dockerfile; do
+          if [ -n "$dockerfile" ] && [ -f "$dockerfile" ]; then
+            echo "Linting: $dockerfile"
+            
+            # Run Hadolint with different formats
+            hadolint --format json "$dockerfile" > "hadolint-$(basename $dockerfile).json" || true
+            hadolint --format tty "$dockerfile" > "hadolint-$(basename $dockerfile).txt" || true
+            hadolint --format checkstyle "$dockerfile" > "hadolint-$(basename $dockerfile).xml" || true
+            hadolint --format codeclimate "$dockerfile" > "hadolint-$(basename $dockerfile)-codeclimate.json" || true
+          fi
+        done
+        
+        # Combine all JSON reports
+        find . -name "hadolint-*.json" -exec cat {} \; | jq -s 'flatten' > hadolint-combined.json || echo "[]" > hadolint-combined.json
+        
+        echo "✅ Hadolint linting completed"
+
+    - name: Run dockerfile_lint (Alternative Linter)
+      if: steps.find-docker-files.outputs.has_docker_files == 'true'
+      run: |
+        echo "🔍 Running dockerfile_lint analysis..."
+        
+        # Create dockerfile_lint rules
+        cat > dockerfile_lint_rules.yaml << 'EOF'
+        profile:
+          name: "Default"
+          description: "Default profile for Dockerfile linting"
+        line_rules:
+          LABEL:
+            paramSyntaxRegex: /.+/
+            rules: []
+          FROM:
+            paramSyntaxRegex: /^[\w./\-:]+(:[\w.]+)?(-[\w]+)?( as \w+)?$/i
+            rules:
+              - label: "is_latest_tag"
+                regex: /latest/
+                level: "warn"
+                message: "base image uses 'latest' tag"
+                description: "using the 'latest' tag may cause unpredictable builds"
+          MAINTAINER:
+            paramSyntaxRegex: /.+/
+            rules:
+              - label: "maintainer_deprecated"
+                regex: /.+/
+                level: "info"
+                message: "the MAINTAINER instruction is deprecated"
+                description: "MAINTAINER is deprecated in favor of using LABEL"
+          RUN:
+            paramSyntaxRegex: /.+/
+            rules:
+              - label: "no_yum_clean_all"
+                regex: /yum(?!.+clean all)/
+                level: "warn"
+                message: "yum clean all missing"
+                description: "the yum cache will remain in this layer"
+              - label: "no_apt_clean"
+                regex: /apt-get install(?!.+rm -rf \/var\/lib\/apt\/lists)/
+                level: "warn"
+                message: "apt-get clean missing"
+                description: "the apt cache will remain in this layer"
+          WORKDIR:
+            paramSyntaxRegex: /.+/
+            rules: []
+          EXPOSE:
+            paramSyntaxRegex: /^[\d\s\-\/tcp\-\/udp]+$/
+            rules: []
+        required_instructions:
+          - instruction: "MAINTAINER"
+            count: 1
+            level: "info"
+            message: "Maintainer is not defined"
+            description: "The MAINTAINER instruction should be used to set the Author field of the generated images"
+        EOF
+        
+        # Analyze each Dockerfile
+        echo '${{ steps.find-docker-files.outputs.dockerfiles }}' | while IFS= read -r dockerfile; do
+          if [ -n "$dockerfile" ] && [ -f "$dockerfile" ]; then
+            echo "Analyzing: $dockerfile"
+            
+            # Run dockerfile_lint
+            dockerfile_lint -f "$dockerfile" -r dockerfile_lint_rules.yaml > "dockerfile_lint-$(basename $dockerfile).txt" || true
+            dockerfile_lint -f "$dockerfile" -r dockerfile_lint_rules.yaml -j > "dockerfile_lint-$(basename $dockerfile).json" || true
+          fi
+        done
+        
+        echo "✅ dockerfile_lint analysis completed"
+
+    - name: Run dockerfilelint (Style and Best Practices)
+      if: steps.find-docker-files.outputs.has_docker_files == 'true'
+      run: |
+        echo "🔍 Running dockerfilelint style analysis..."
+        
+        # Analyze each Dockerfile
+        echo '${{ steps.find-docker-files.outputs.dockerfiles }}' | while IFS= read -r dockerfile; do
+          if [ -n "$dockerfile" ] && [ -f "$dockerfile" ]; then
+            echo "Style checking: $dockerfile"
+            
+            # Run dockerfilelint
+            dockerfilelint "$dockerfile" > "dockerfilelint-$(basename $dockerfile).txt" || true
+          fi
+        done
+        
+        echo "✅ dockerfilelint style analysis completed"
+
+    - name: Analyze .dockerignore files
+      if: steps.find-docker-files.outputs.has_docker_files == 'true'
+      run: |
+        echo "🔍 Analyzing .dockerignore files..."
+        
+        # Check .dockerignore files
+        echo '${{ steps.find-docker-files.outputs.dockerignore_files }}' | while IFS= read -r dockerignore; do
+          if [ -n "$dockerignore" ] && [ -f "$dockerignore" ]; then
+            echo "Analyzing: $dockerignore"
+            
+            # Basic .dockerignore analysis
+            cat > "dockerignore-analysis-$(basename $(dirname $dockerignore)).txt" << EOF
+        # .dockerignore Analysis for $(dirname $dockerignore)
+        
+        File: $dockerignore
+        Lines: $(wc -l < "$dockerignore")
+        Size: $(stat -f%z "$dockerignore" 2>/dev/null || stat -c%s "$dockerignore") bytes
+        
+        ## Content Analysis:
+        $(cat "$dockerignore")
+        
+        ## Recommendations:
+        - Ensure node_modules is ignored if using Node.js
+        - Ignore .git directory to reduce build context
+        - Ignore temporary and cache files
+        - Consider ignoring documentation files in production builds
+        EOF
+          fi
+        done
+        
+        echo "✅ .dockerignore analysis completed"
+
+    - name: Generate comprehensive Docker quality report
+      if: steps.find-docker-files.outputs.has_docker_files == 'true'
+      run: |
+        echo "📊 Generating comprehensive Docker quality report..."
+        
+        cat > docker-quality-analysis-report.md << 'EOF'
+        # 🐳 Docker Code Quality & Standards Report
+        
+        **Generated:** $(date)
+        **Repository:** ${{ github.repository }}
+        **Branch:** ${{ github.ref_name }}
+        **Commit:** ${{ github.sha }}
+        
+        ## 📋 Quality Metrics Summary
+        
+        This report contains comprehensive code quality analysis for Docker including:
+        - **Dockerfile Linting:** Hadolint comprehensive analysis
+        - **Alternative Linting:** dockerfile_lint and dockerfilelint
+        - **Best Practices:** Docker security and optimization recommendations
+        - **Style Guide:** Dockerfile formatting and structure analysis
+        
+        ## 🔍 Linting Results
+        
+        ### Hadolint (Primary Linter)
+        EOF
+        
+        # Analyze Hadolint results
+        if [ -f hadolint-combined.json ]; then
+          HADOLINT_ERRORS=$(jq '[.[] | select(.level == "error")] | length' hadolint-combined.json 2>/dev/null || echo "0")
+          HADOLINT_WARNINGS=$(jq '[.[] | select(.level == "warning")] | length' hadolint-combined.json 2>/dev/null || echo "0")
+          HADOLINT_INFO=$(jq '[.[] | select(.level == "info")] | length' hadolint-combined.json 2>/dev/null || echo "0")
+          HADOLINT_STYLE=$(jq '[.[] | select(.level == "style")] | length' hadolint-combined.json 2>/dev/null || echo "0")
+          
+          echo "- **Errors:** $HADOLINT_ERRORS" >> docker-quality-analysis-report.md
+          echo "- **Warnings:** $HADOLINT_WARNINGS" >> docker-quality-analysis-report.md
+          echo "- **Info:** $HADOLINT_INFO" >> docker-quality-analysis-report.md
+          echo "- **Style:** $HADOLINT_STYLE" >> docker-quality-analysis-report.md
+          
+          TOTAL_ISSUES=$((HADOLINT_ERRORS + HADOLINT_WARNINGS + HADOLINT_INFO + HADOLINT_STYLE))
+          
+          if [ "$HADOLINT_ERRORS" -gt "0" ]; then
+            echo "- **Status:** ❌ Errors found - fix required" >> docker-quality-analysis-report.md
+          elif [ "$HADOLINT_WARNINGS" -gt "0" ]; then
+            echo "- **Status:** ⚠️ Warnings found - review recommended" >> docker-quality-analysis-report.md
+          elif [ "$TOTAL_ISSUES" -gt "0" ]; then
+            echo "- **Status:** ℹ️ Minor issues found - consider improvements" >> docker-quality-analysis-report.md
+          else
+            echo "- **Status:** ✅ No issues found - excellent quality" >> docker-quality-analysis-report.md
+          fi
+        else
+          echo "- **Status:** ℹ️ No Dockerfile analysis available" >> docker-quality-analysis-report.md
+        fi
+        
+        echo "" >> docker-quality-analysis-report.md
+        echo "### dockerfile_lint (Alternative Analysis)" >> docker-quality-analysis-report.md
+        
+        # Count dockerfile_lint issues
+        DOCKERFILE_LINT_ISSUES=0
+        for file in dockerfile_lint-*.json; do
+          if [ -f "$file" ]; then
+            ISSUES=$(jq '.[] | length' "$file" 2>/dev/null || echo "0")
+            DOCKERFILE_LINT_ISSUES=$((DOCKERFILE_LINT_ISSUES + ISSUES))
+          fi
+        done
+        
+        echo "- **Issues Found:** $DOCKERFILE_LINT_ISSUES" >> docker-quality-analysis-report.md
+        
+        if [ "$DOCKERFILE_LINT_ISSUES" -eq "0" ]; then
+          echo "- **Status:** ✅ No issues found" >> docker-quality-analysis-report.md
+        else
+          echo "- **Status:** ⚠️ Issues found - review recommended" >> docker-quality-analysis-report.md
+        fi
+        
+        echo "" >> docker-quality-analysis-report.md
+        echo "### dockerfilelint (Style Analysis)" >> docker-quality-analysis-report.md
+        
+        # Check dockerfilelint results
+        DOCKERFILELINT_ISSUES=0
+        for file in dockerfilelint-*.txt; do
+          if [ -f "$file" ] && [ -s "$file" ]; then
+            ISSUES=$(grep -c "ERROR\|WARNING" "$file" 2>/dev/null || echo "0")
+            DOCKERFILELINT_ISSUES=$((DOCKERFILELINT_ISSUES + ISSUES))
+          fi
+        done
+        
+        echo "- **Style Issues:** $DOCKERFILELINT_ISSUES" >> docker-quality-analysis-report.md
+        
+        if [ "$DOCKERFILELINT_ISSUES" -eq "0" ]; then
+          echo "- **Status:** ✅ Good style compliance" >> docker-quality-analysis-report.md
+        else
+          echo "- **Status:** ⚠️ Style improvements recommended" >> docker-quality-analysis-report.md
+        fi
+        
+        echo "" >> docker-quality-analysis-report.md
+        echo "## 📊 Quality Score Calculation" >> docker-quality-analysis-report.md
+        echo "" >> docker-quality-analysis-report.md
+        
+        # Calculate quality score (0-100)
+        QUALITY_SCORE=100
+        QUALITY_SCORE=$((QUALITY_SCORE - HADOLINT_ERRORS * 10))
+        QUALITY_SCORE=$((QUALITY_SCORE - HADOLINT_WARNINGS * 5))
+        QUALITY_SCORE=$((QUALITY_SCORE - HADOLINT_INFO * 2))
+        QUALITY_SCORE=$((QUALITY_SCORE - DOCKERFILE_LINT_ISSUES * 3))
+        QUALITY_SCORE=$((QUALITY_SCORE - DOCKERFILELINT_ISSUES * 2))
+        
+        # Ensure score doesn't go below 0
+        if [ "$QUALITY_SCORE" -lt "0" ]; then
+          QUALITY_SCORE=0
+        fi
+        
+        echo "**Overall Quality Score:** $QUALITY_SCORE/100" >> docker-quality-analysis-report.md
+        echo "" >> docker-quality-analysis-report.md
+        
+        if [ "$QUALITY_SCORE" -ge "90" ]; then
+          echo "**Quality Level:** 🟢 **EXCELLENT** - Outstanding Docker practices" >> docker-quality-analysis-report.md
+        elif [ "$QUALITY_SCORE" -ge "75" ]; then
+          echo "**Quality Level:** 🟡 **GOOD** - Minor improvements possible" >> docker-quality-analysis-report.md
+        elif [ "$QUALITY_SCORE" -ge "60" ]; then
+          echo "**Quality Level:** 🟠 **FAIR** - Several improvements needed" >> docker-quality-analysis-report.md
+        else
+          echo "**Quality Level:** 🔴 **POOR** - Significant improvements required" >> docker-quality-analysis-report.md
+        fi
+        
+        echo "" >> docker-quality-analysis-report.md
+        echo "## 📋 Detailed Issues" >> docker-quality-analysis-report.md
+        
+        # Add top Hadolint issues
+        if [ -f hadolint-combined.json ] && [ "$(jq '. | length' hadolint-combined.json)" -gt "0" ]; then
+          echo "" >> docker-quality-analysis-report.md
+          echo "### Top Hadolint Issues" >> docker-quality-analysis-report.md
+          echo '```json' >> docker-quality-analysis-report.md
+          jq '[.[] | {rule: .code, level: .level, message: .message, line: .line}] | .[0:10]' hadolint-combined.json >> docker-quality-analysis-report.md
+          echo '```' >> docker-quality-analysis-report.md
+        fi
+        
+        echo "" >> docker-quality-analysis-report.md
+        echo "## 🎯 Recommendations" >> docker-quality-analysis-report.md
+        echo "" >> docker-quality-analysis-report.md
+        echo "### Docker Best Practices" >> docker-quality-analysis-report.md
+        echo "1. **Multi-stage Builds:** Use multi-stage builds to reduce image size" >> docker-quality-analysis-report.md
+        echo "2. **Minimal Base Images:** Use Alpine or distroless images when possible" >> docker-quality-analysis-report.md
+        echo "3. **Layer Optimization:** Combine RUN commands to reduce layers" >> docker-quality-analysis-report.md
+        echo "4. **Security:** Run as non-root user and avoid latest tags" >> docker-quality-analysis-report.md
+        echo "5. **Caching:** Optimize layer caching for faster builds" >> docker-quality-analysis-report.md
+        echo "" >> docker-quality-analysis-report.md
+        echo "### Immediate Fixes" >> docker-quality-analysis-report.md
+        echo "1. **Fix Errors:** Address all Hadolint errors before deployment" >> docker-quality-analysis-report.md
+        echo "2. **Review Warnings:** Consider fixing warnings for better practices" >> docker-quality-analysis-report.md
+        echo "3. **Update Documentation:** Add or improve Dockerfile comments" >> docker-quality-analysis-report.md
+        echo "4. **Optimize .dockerignore:** Ensure proper files are excluded" >> docker-quality-analysis-report.md
+        
+        echo "✅ Docker quality analysis report generated"
+
+    - name: Upload Docker quality results
+      if: steps.find-docker-files.outputs.has_docker_files == 'true'
+      uses: actions/upload-artifact@v3
+      with:
+        name: docker-quality-reports-${{ github.run_number }}
+        path: |
+          hadolint-*.json
+          hadolint-*.txt
+          hadolint-*.xml
+          hadolint-*-codeclimate.json
+          hadolint-combined.json
+          dockerfile_lint-*.txt
+          dockerfile_lint-*.json
+          dockerfilelint-*.txt
+          dockerignore-analysis-*.txt
+          docker-quality-analysis-report.md
+
+    - name: Comment Docker quality summary on PR
+      if: github.event_name == 'pull_request' && steps.find-docker-files.outputs.has_docker_files == 'true'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          
+          if (fs.existsSync('docker-quality-analysis-report.md')) {
+            const report = fs.readFileSync('docker-quality-analysis-report.md', 'utf8');
+            
+            // Create summary for PR comment
+            let summary = `## 🐳 Docker Quality Summary\n\n`;
+            
+            // Extract quality score
+            const scoreMatch = report.match(/\*\*Overall Quality Score:\*\* (\d+)\/100/);
+            if (scoreMatch) {
+              const score = parseInt(scoreMatch[1]);
+              summary += `**Quality Score:** ${score}/100\n\n`;
+              
+              if (score >= 90) {
+                summary += `**Quality Level:** 🟢 Excellent\n\n`;
+              } else if (score >= 75) {
+                summary += `**Quality Level:** 🟡 Good\n\n`;
+              } else if (score >= 60) {
+                summary += `**Quality Level:** 🟠 Fair\n\n`;
+              } else {
+                summary += `**Quality Level:** 🔴 Poor\n\n`;
+              }
+            }
+            
+            summary += `<details>\n<summary>📊 Detailed Docker Quality Report</summary>\n\n${report}\n\n</details>`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+          }
+
+  # Docker Compose Quality Analysis
+  docker-compose-quality:
+    name: Docker Compose Quality Analysis
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Docker Compose quality tools
+      run: |
+        echo "🔧 Installing Docker Compose quality tools..."
+        
+        # Install yamllint for YAML validation
+        pip install yamllint
+        
+        # Install docker-compose for validation
+        pip install docker-compose
+        
+        echo "✅ Docker Compose quality tools installed"
+
+    - name: Find Docker Compose files
+      id: find-compose-files
+      run: |
+        echo "🔍 Finding Docker Compose files..."
+        
+        COMPOSE_FILES=$(find . -name "docker-compose*.yml" -o -name "docker-compose*.yaml" | head -10)
+        
+        echo "compose_files<<EOF" >> $GITHUB_OUTPUT
+        echo "$COMPOSE_FILES" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        if [ -n "$COMPOSE_FILES" ]; then
+          echo "has_compose_files=true" >> $GITHUB_OUTPUT
+          echo "✅ Found Docker Compose files to analyze"
+        else
+          echo "has_compose_files=false" >> $GITHUB_OUTPUT
+          echo "⚠️ No Docker Compose files found"
+        fi
+
+    - name: Run YAML linting on Docker Compose files
+      if: steps.find-compose-files.outputs.has_compose_files == 'true'
+      run: |
+        echo "🔍 Running YAML linting on Docker Compose files..."
+        
+        # Create yamllint config for Docker Compose
+        cat > .yamllint.yml << 'EOF'
+        extends: default
+        rules:
+          line-length:
+            max: 120
+          indentation:
+            spaces: 2
+          comments:
+            min-spaces-from-content: 1
+        EOF
+        
+        # Analyze each Docker Compose file
+        echo '${{ steps.find-compose-files.outputs.compose_files }}' | while IFS= read -r composefile; do
+          if [ -n "$composefile" ] && [ -f "$composefile" ]; then
+            echo "YAML linting: $composefile"
+            
+            # Run yamllint
+            yamllint -f parsable "$composefile" > "yamllint-$(basename $composefile).txt" || true
+            yamllint -f json "$composefile" > "yamllint-$(basename $composefile).json" || true
+          fi
+        done
+        
+        echo "✅ YAML linting completed"
+
+    - name: Validate Docker Compose syntax
+      if: steps.find-compose-files.outputs.has_compose_files == 'true'
+      run: |
+        echo "🔍 Validating Docker Compose syntax..."
+        
+        # Validate each Docker Compose file
+        echo '${{ steps.find-compose-files.outputs.compose_files }}' | while IFS= read -r composefile; do
+          if [ -n "$composefile" ] && [ -f "$composefile" ]; then
+            echo "Validating: $composefile"
+            
+            # Validate Docker Compose syntax
+            docker-compose -f "$composefile" config > "compose-validation-$(basename $composefile).yml" 2> "compose-validation-$(basename $composefile).log" || true
+          fi
+        done
+        
+        echo "✅ Docker Compose validation completed"
+
+    - name: Generate Docker Compose quality report
+      if: steps.find-compose-files.outputs.has_compose_files == 'true'
+      run: |
+        echo "📊 Generating Docker Compose quality report..."
+        
+        cat > docker-compose-quality-report.md << 'EOF'
+        # 🐳 Docker Compose Quality Report
+        
+        **Generated:** $(date)
+        
+        ## 📋 Docker Compose Analysis Results
+        
+        ### YAML Syntax Validation
+        EOF
+        
+        # Count YAML issues
+        YAML_ISSUES=0
+        for file in yamllint-*.json; do
+          if [ -f "$file" ]; then
+            ISSUES=$(jq '. | length' "$file" 2>/dev/null || echo "0")
+            YAML_ISSUES=$((YAML_ISSUES + ISSUES))
+          fi
+        done
+        
+        echo "- **YAML Issues:** $YAML_ISSUES" >> docker-compose-quality-report.md
+        
+        if [ "$YAML_ISSUES" -eq "0" ]; then
+          echo "- **Status:** ✅ Valid YAML syntax" >> docker-compose-quality-report.md
+        else
+          echo "- **Status:** ⚠️ YAML issues found" >> docker-compose-quality-report.md
+        fi
+        
+        echo "" >> docker-compose-quality-report.md
+        echo "### Docker Compose Validation" >> docker-compose-quality-report.md
+        
+        # Check validation results
+        VALIDATION_ERRORS=0
+        for file in compose-validation-*.log; do
+          if [ -f "$file" ] && [ -s "$file" ]; then
+            VALIDATION_ERRORS=$((VALIDATION_ERRORS + 1))
+          fi
+        done
+        
+        echo "- **Validation Errors:** $VALIDATION_ERRORS" >> docker-compose-quality-report.md
+        
+        if [ "$VALIDATION_ERRORS" -eq "0" ]; then
+          echo "- **Status:** ✅ Valid Docker Compose syntax" >> docker-compose-quality-report.md
+        else
+          echo "- **Status:** ❌ Validation errors found" >> docker-compose-quality-report.md
+        fi
+        
+        echo "" >> docker-compose-quality-report.md
+        echo "## 🎯 Docker Compose Best Practices" >> docker-compose-quality-report.md
+        echo "" >> docker-compose-quality-report.md
+        echo "1. **Version Pinning:** Always specify service image versions" >> docker-compose-quality-report.md
+        echo "2. **Environment Variables:** Use .env files for configuration" >> docker-compose-quality-report.md
+        echo "3. **Health Checks:** Define health checks for services" >> docker-compose-quality-report.md
+        echo "4. **Resource Limits:** Set memory and CPU limits" >> docker-compose-quality-report.md
+        echo "5. **Networks:** Use custom networks for service isolation" >> docker-compose-quality-report.md
+        
+        echo "✅ Docker Compose quality report generated"
+
+    - name: Upload Docker Compose quality results
+      if: steps.find-compose-files.outputs.has_compose_files == 'true'
+      uses: actions/upload-artifact@v3
+      with:
+        name: docker-compose-quality-reports-${{ github.run_number }}
+        path: |
+          yamllint-*.txt
+          yamllint-*.json
+          compose-validation-*.yml
+          compose-validation-*.log
+          docker-compose-quality-report.md

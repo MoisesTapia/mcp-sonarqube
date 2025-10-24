@@ -49,29 +49,6 @@ A comprehensive Model Context Protocol (MCP) server that enables seamless integr
 
 3. **Start the services**:
    ```bash
-   # Start all services
-   docker-compose -f docker/compose/base/docker-compose.yml up -d
-   
-   # Or use the deployment script
-   bash docker/scripts/deploy.sh deploy development
-   ```
-
-4. **Access the applications**:
-   - **Streamlit App**: http://localhost:8501
-   - **SonarQube**: http://localhost:9000/sonarqube
-   - **MCP Server**: http://localhost:8001 (for debugging)
-
-5. **Configure SonarQube connection**:
-   - Open Streamlit app at http://localhost:8501
-   - Go to Configuration page
-   - Enter SonarQube URL: `http://localhost:9000/sonarqube`
-   - Enter your SonarQube token
-   - Test and save configuration
-   # Edit the file with your SonarQube token and settings
-   ```
-
-4. **Start services**:
-   ```bash
    # Start all services with development configuration
    docker compose -f docker/compose/base/docker-compose.yml \
                    -f docker/compose/environments/development.yml \
@@ -79,18 +56,25 @@ A comprehensive Model Context Protocol (MCP) server that enables seamless integr
                    up --build
    ```
 
-5. **Access applications**:
+4. **Access applications**:
 
 | Service | URL | Port | Credentials |
 |---------|-----|------|-------------|
 | **Streamlit UI** | http://localhost:8501 | 8501 | - |
 | **SonarQube** | http://localhost:9000/sonarqube | 9000 | admin / admin |
-| **MCP Server** | http://localhost:8000/health | 8000 | - |
+| **MCP Server** | http://localhost:8001/health | 8001 | - |
 | **pgAdmin** | http://localhost:8082 | 8082 | admin@example.com / admin |
 | **Redis Commander** | http://localhost:8081 | 8081 | - |
 | **Mailhog** | http://localhost:8025 | 8025 | - |
 | **PostgreSQL** | localhost:5432 | 5432 | sonarqube / sonarqube_dev_password |
 | **Redis** | localhost:6379 | 6379 | redis_dev_password |
+
+5. **Configure SonarQube connection**:
+   - Open Streamlit app at http://localhost:8501
+   - Go to Configuration page
+   - Enter SonarQube URL: `http://localhost:9000/sonarqube`
+   - Enter your SonarQube token
+   - Test and save configuration
 
 📖 **For detailed Docker configuration, see [docker/README.md](docker/README.md)**
 
@@ -373,19 +357,26 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🗺️ Roadmap
 
-### Current Version (v1.0)
+### Current Version (v1.1.0) - Latest Release
 - ✅ Core MCP protocol implementation
 - ✅ SonarQube integration
 - ✅ Streamlit web interface
 - ✅ Docker containerization
 - ✅ Kubernetes deployment
+- ✅ **NEW**: Fixed MCP server port consistency (8001)
+- ✅ **NEW**: Improved error handling and session state management
+- ✅ **NEW**: Updated Streamlit compatibility (v1.50+)
+- ✅ **NEW**: Enhanced Docker configuration and health checks
+- ✅ **NEW**: Production-ready configuration templates
 
-### Upcoming Features (v1.1)
+### Upcoming Features (v1.2)
 - [ ] Advanced analytics and reporting
 - [ ] Custom quality gate templates
 - [ ] Webhook integrations
 - [ ] Multi-tenant support
 - [ ] Enhanced security features
+- [ ] Real-time notifications
+- [ ] Improved caching strategies
 
 ### Future Enhancements (v2.0)
 - [ ] Machine learning insights
@@ -408,6 +399,40 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Configure appropriate resource limits
 - Monitor and tune cache TTL values
 
+## 📝 Changelog
+
+### v1.1.0 (2024-10-24) - Stability and Configuration Updates
+
+#### 🔧 **Fixed**
+- **MCP Server Port Consistency**: Standardized MCP server port to 8001 across all configurations
+- **Session State Errors**: Fixed Streamlit session state initialization issues
+- **Deprecation Warnings**: Updated `use_container_width` to `width="stretch"` for Streamlit 1.50+
+- **Docker Compose Syntax**: Removed obsolete version field from production configuration
+- **Health Check Recursion**: Fixed infinite recursion in MCP client health checks
+
+#### 🚀 **Improved**
+- **Error Handling**: Enhanced error handling with graceful fallbacks
+- **Async Operations**: Better async/await patterns in MCP client
+- **Docker Configuration**: Cleaned up production overrides and service definitions
+- **Logging**: Improved structured logging with better error tracking
+- **Documentation**: Updated README files with current configurations and troubleshooting
+
+#### 🔒 **Security**
+- **Container Security**: Improved file permission handling
+- **Network Configuration**: Better service isolation and communication
+- **Production Templates**: Enhanced production configuration templates
+
+### v1.0.0 (2024-10-20) - Initial Release
+
+#### ✨ **Features**
+- Complete MCP protocol implementation
+- SonarQube integration with comprehensive API coverage
+- Streamlit web interface with real-time data
+- Docker containerization with multi-environment support
+- Kubernetes deployment configurations
+- Redis caching for performance optimization
+- Comprehensive monitoring and health checks
+
 ## 🏆 Acknowledgments
 
 - [FastMCP](https://github.com/pydantic/fastmcp) - MCP protocol implementation
@@ -417,4 +442,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Made with ❤️ by the Moises Tapia (Cl0nR3v)**
+**Made with ❤️ by Moises Tapia (Cl0nR3v)**

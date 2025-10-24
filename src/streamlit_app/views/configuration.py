@@ -138,21 +138,21 @@ def render():
             test_button = st.form_submit_button(
                 "🔍 Test Connection",
                 type="secondary",
-                use_container_width=True
+                width="stretch"
             )
         
         with col2:
             save_button = st.form_submit_button(
                 "💾 Save Configuration",
                 type="primary",
-                use_container_width=True
+                width="stretch"
             )
         
         with col3:
             clear_button = st.form_submit_button(
                 "🗑️ Clear Configuration",
                 type="secondary",
-                use_container_width=True
+                width="stretch"
             )
     
     # Handle form submissions

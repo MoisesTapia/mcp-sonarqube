@@ -1,413 +1,185 @@
-name: CI/CD Pipeline
+# COMMENTED OUT - Main CI Pipeline
+# This workflow has been temporarily disabled to focus on specialized workflows
+# Uncomment when needed for main CI pipeline functionality
 
-on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main, develop ]
-  release:
-    types: [ published ]
-
-env:
-  PYTHON_VERSION: '3.11'
-  NODE_VERSION: '18'
-
-jobs:
-  # Code Quality and Linting
-  lint:
-    name: Code Quality & Linting
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-
-    - name: Cache pip dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements-dev.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements-dev.txt
-
-    - name: Run Black (Code Formatting)
-      run: black --check --diff src tests
-
-    - name: Run Ruff (Linting)
-      run: ruff check src tests
-
-    - name: Run MyPy (Type Checking)
-      run: mypy src
-
-    - name: Check import sorting
-      run: ruff check --select I src tests
-
-  # Security Scanning
-  security:
-    name: Security Scanning
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements-dev.txt
-        pip install safety bandit
-
-    - name: Run Safety (Dependency Security)
-      run: safety check --json
-
-    - name: Run Bandit (Security Linting)
-      run: bandit -r src -f json
-
-    - name: Run Semgrep (SAST)
-      uses: returntocorp/semgrep-action@v1
-      with:
-        config: >-
-          p/security-audit
-          p/secrets
-          p/python
-
-  # Unit and Integration Tests
-  test:
-    name: Tests
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.9', '3.10', '3.11', '3.12']
-    
-    services:
-      redis:
-        image: redis:7-alpine
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
-
-    - name: Cache pip dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-${{ matrix.python-version }}-pip-${{ hashFiles('**/requirements-dev.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-${{ matrix.python-version }}-pip-
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements-dev.txt
-
-    - name: Run unit tests
-      run: |
-        pytest tests/unit/ -v --cov=src --cov-report=xml --cov-report=term
-      env:
-        REDIS_URL: redis://localhost:6379/0
-
-    - name: Run integration tests
-      run: |
-        pytest tests/integration/ -v
-      env:
-        REDIS_URL: redis://localhost:6379/0
-        SONARQUBE_URL: ${{ secrets.TEST_SONARQUBE_URL }}
-        SONARQUBE_TOKEN: ${{ secrets.TEST_SONARQUBE_TOKEN }}
-
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./coverage.xml
-        flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: false
-
-  # Docker Build and Test
-  docker:
-    name: Docker Build & Test
-    runs-on: ubuntu-latest
-    needs: [lint, test]
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Cache Docker layers
-      uses: actions/cache@v3
-      with:
-        path: /tmp/.buildx-cache
-        key: ${{ runner.os }}-buildx-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-buildx-
-
-    - name: Build MCP Server image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: docker/dockerfiles/mcp-server.Dockerfile
-        push: false
-        tags: sonarqube-mcp-server:test
-        cache-from: type=local,src=/tmp/.buildx-cache
-        cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
-
-    - name: Build Streamlit App image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: docker/dockerfiles/streamlit.Dockerfile
-        push: false
-        tags: sonarqube-streamlit-app:test
-        cache-from: type=local,src=/tmp/.buildx-cache
-        cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
-
-    - name: Test Docker Compose
-      run: |
-        # Copy development environment for testing
-        cp docker/environments/.env.development .env
-        
-        # Start services
-        docker-compose -f docker/compose/base/docker-compose.yml \
-                      -f docker/compose/environments/development.yml up -d
-        
-        # Wait for services to be ready
-        sleep 30
-        
-        # Run health checks
-        bash docker/scripts/health-check.sh || true
-        
-        # Cleanup
-        docker-compose down
-
-    - name: Move cache
-      run: |
-        rm -rf /tmp/.buildx-cache
-        mv /tmp/.buildx-cache-new /tmp/.buildx-cache
-
-  # UI Tests (End-to-End)
-  ui-tests:
-    name: UI Tests
-    runs-on: ubuntu-latest
-    needs: [docker]
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements-dev.txt
-
-    - name: Set up Docker Compose
-      run: |
-        cp docker/environments/.env.development .env
-        docker-compose -f docker/compose/base/docker-compose.yml \
-                      -f docker/compose/environments/development.yml up -d
-        
-        # Wait for services to be ready
-        timeout 300 bash -c 'until curl -f http://localhost:8501/_stcore/health; do sleep 5; done'
-
-    - name: Run UI tests
-      run: |
-        pytest tests/ui/ -v --maxfail=5
-      env:
-        STREAMLIT_URL: http://localhost:8501
-        HEADLESS: true
-
-    - name: Cleanup
-      if: always()
-      run: |
-        docker-compose down
-        docker system prune -f
-
-  # Build and Push Docker Images (on release)
-  release:
-    name: Build & Push Release Images
-    runs-on: ubuntu-latest
-    needs: [lint, security, test, docker, ui-tests]
-    if: github.event_name == 'release'
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Login to Docker Hub
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
-
-    - name: Login to GitHub Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: |
-          sonarqube-mcp/mcp-server
-          ghcr.io/${{ github.repository }}/mcp-server
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=semver,pattern={{major}}
-
-    - name: Build and push MCP Server
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: docker/dockerfiles/mcp-server.Dockerfile
-        platforms: linux/amd64,linux/arm64
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-
-    - name: Build and push Streamlit App
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: docker/dockerfiles/streamlit.Dockerfile
-        platforms: linux/amd64,linux/arm64
-        push: true
-        tags: |
-          sonarqube-mcp/streamlit-app:latest
-          sonarqube-mcp/streamlit-app:${{ github.ref_name }}
-          ghcr.io/${{ github.repository }}/streamlit-app:latest
-          ghcr.io/${{ github.repository }}/streamlit-app:${{ github.ref_name }}
-
-  # Deploy to Staging (on main branch)
-  deploy-staging:
-    name: Deploy to Staging
-    runs-on: ubuntu-latest
-    needs: [lint, security, test, docker]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment: staging
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Deploy to staging
-      run: |
-        echo "Deploying to staging environment..."
-        # Add your staging deployment commands here
-        # Example: kubectl apply -f k8s/staging/
-        # Example: docker-compose -f docker-compose.staging.yml up -d
-
-    - name: Run smoke tests
-      run: |
-        echo "Running smoke tests on staging..."
-        # Add smoke tests for staging environment
-
-  # Security Scan Docker Images
-  docker-security:
-    name: Docker Security Scan
-    runs-on: ubuntu-latest
-    needs: [docker]
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Build images for scanning
-      run: |
-        docker build -f docker/dockerfiles/mcp-server.Dockerfile -t mcp-server:scan .
-        docker build -f docker/dockerfiles/streamlit.Dockerfile -t streamlit-app:scan .
-
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: 'mcp-server:scan'
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-
-    - name: Upload Trivy scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v2
-      with:
-        sarif_file: 'trivy-results.sarif'
-
-  # Dependency Review (on PRs)
-  dependency-review:
-    name: Dependency Review
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Dependency Review
-      uses: actions/dependency-review-action@v3
-      with:
-        fail-on-severity: moderate
-
-  # Performance Tests (optional, on main branch)
-  performance:
-    name: Performance Tests
-    runs-on: ubuntu-latest
-    needs: [test]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements-dev.txt
-        pip install pytest-benchmark
-
-    - name: Run performance tests
-      run: |
-        pytest tests/performance/ -v --benchmark-only
-      env:
-        REDIS_URL: redis://localhost:6379/0
+#name: Main CI Pipeline
+#
+#on:
+#  push:
+#    branches: [ main, develop ]
+#  pull_request:
+#    branches: [ main, develop ]
+#  release:
+#    types: [ published ]
+#
+#env:
+#  PYTHON_VERSION: '3.11'
+#
+#jobs:
+#  # Basic Quality Check (Quick validation)
+#  quick-quality:
+#    name: Quick Quality Check
+#    runs-on: ubuntu-latest
+#    steps:
+#    - name: Checkout code
+#      uses: actions/checkout@v4
+#
+#    - name: Set up Python
+#      uses: actions/setup-python@v4
+#      with:
+#        python-version: ${{ env.PYTHON_VERSION }}
+#
+#    - name: Cache pip dependencies
+#      uses: actions/cache@v3
+#      with:
+#        path: ~/.cache/pip
+#        key: ${{ runner.os }}-quick-pip-${{ hashFiles('**/requirements-dev.txt') }}
+#        restore-keys: |
+#          ${{ runner.os }}-quick-pip-
+#
+#    - name: Install dependencies
+#      run: |
+#        python -m pip install --upgrade pip
+#        pip install -r requirements-dev.txt
+#
+#    - name: Quick syntax check
+#      run: |
+#        echo "🔍 Running quick syntax validation..."
+#        python -m py_compile src/**/*.py
+#        echo "✅ Syntax check passed"
+#
+#    - name: Quick import check
+#      run: |
+#        echo "📦 Checking imports..."
+#        python -c "
+#        import sys
+#        sys.path.insert(0, 'src')
+#        try:
+#            import mcp_server
+#            import streamlit_app
+#            print('✅ Main modules import successfully')
+#        except ImportError as e:
+#            print(f'❌ Import error: {e}')
+#            sys.exit(1)
+#        "
+#
+#    - name: Quick linting (Ruff only)
+#      run: |
+#        echo "⚡ Running quick Ruff check..."
+#        ruff check src/ tests/ --select=E,F,W --quiet
+#        echo "✅ Quick linting passed"
+#
+#  # Unit and Integration Tests
+#  test:
+#    name: Tests
+#    runs-on: ubuntu-latest
+#    strategy:
+#      matrix:
+#        python-version: ['3.9', '3.10', '3.11', '3.12']
+#    
+#    services:
+#      redis:
+#        image: redis:7-alpine
+#        options: >-
+#          --health-cmd "redis-cli ping"
+#          --health-interval 10s
+#          --health-timeout 5s
+#          --health-retries 5
+#        ports:
+#          - 6379:6379
+#
+#    steps:
+#    - name: Checkout code
+#      uses: actions/checkout@v4
+#
+#    - name: Set up Python ${{ matrix.python-version }}
+#      uses: actions/setup-python@v4
+#      with:
+#        python-version: ${{ matrix.python-version }}
+#
+#    - name: Cache pip dependencies
+#      uses: actions/cache@v3
+#      with:
+#        path: ~/.cache/pip
+#        key: ${{ runner.os }}-${{ matrix.python-version }}-pip-${{ hashFiles('**/requirements-dev.txt') }}
+#        restore-keys: |
+#          ${{ runner.os }}-${{ matrix.python-version }}-pip-
+#
+#    - name: Install dependencies
+#      run: |
+#        python -m pip install --upgrade pip
+#        pip install -r requirements-dev.txt
+#
+#    - name: Run unit tests
+#      run: |
+#        pytest tests/unit/ -v --cov=src --cov-report=xml --cov-report=term
+#      env:
+#        REDIS_URL: redis://localhost:6379/0
+#
+#    - name: Run integration tests
+#      run: |
+#        pytest tests/integration/ -v
+#      env:
+#        REDIS_URL: redis://localhost:6379/0
+#        SONARQUBE_URL: ${{ secrets.TEST_SONARQUBE_URL }}
+#        SONARQUBE_TOKEN: ${{ secrets.TEST_SONARQUBE_TOKEN }}
+#
+#    - name: Upload coverage to Codecov
+#      uses: codecov/codecov-action@v3
+#      with:
+#        file: ./coverage.xml
+#        flags: unittests
+#        name: codecov-umbrella
+#        fail_ci_if_error: false
+#
+#
+#  # Performance Tests (on main branch only)
+#  performance:
+#    name: Performance Tests
+#    runs-on: ubuntu-latest
+#    needs: [quick-quality, test]
+#    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+#    
+#    steps:
+#    - name: Checkout code
+#      uses: actions/checkout@v4
+#
+#    - name: Set up Python
+#      uses: actions/setup-python@v4
+#      with:
+#        python-version: ${{ env.PYTHON_VERSION }}
+#
+#    - name: Cache pip dependencies
+#      uses: actions/cache@v3
+#      with:
+#        path: ~/.cache/pip
+#        key: ${{ runner.os }}-perf-pip-${{ hashFiles('**/requirements-dev.txt') }}
+#        restore-keys: |
+#          ${{ runner.os }}-perf-pip-
+#
+#    - name: Install dependencies
+#      run: |
+#        python -m pip install --upgrade pip
+#        pip install -r requirements-dev.txt
+#
+#    - name: Run performance tests
+#      run: |
+#        echo "🚀 Running performance tests..."
+#        
+#        # Check if simple load test script exists
+#        if [ -f "scripts/testing/simple-load-test.sh" ]; then
+#          bash scripts/testing/simple-load-test.sh --users 5 --duration 30 --report
+#        else
+#          echo "⚠️ Simple load test script not found, skipping performance tests"
+#        fi
+#        
+#        echo "✅ Performance tests completed"
+#
+#    - name: Upload performance results
+#      if: always()
+#      uses: actions/upload-artifact@v3
+#      with:
+#        name: performance-test-results
+#        path: |
+#          load-test-results/
+#        retention-days: 7

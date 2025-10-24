@@ -270,7 +270,7 @@ restore_volumes() {
 check_health() {
     log "Checking service health..."
     
-    local services=("mcp-server:8000/health" "streamlit-app:8501/_stcore/health" "sonarqube:9000/sonarqube/api/system/status")
+    local services=("mcp-server:8001/health" "streamlit-app:8501/_stcore/health" "sonarqube:9000/sonarqube/api/system/status")
     
     for service_url in "${services[@]}"; do
         local service=$(echo "$service_url" | cut -d: -f1)
@@ -306,7 +306,7 @@ show_ports() {
     echo "├─────────────────┼──────────────┼───────────────┼─────────────────────────────────┤"
     echo "│ Streamlit App   │ 8501         │ 8501          │ Web UI Access                   │"
     echo "│ SonarQube       │ 9000         │ 9000          │ Code Analysis Dashboard         │"
-    echo "│ MCP Server      │ 8000         │ 8000          │ MCP API Endpoints               │"
+    echo "│ MCP Server      │ 8001         │ 8001          │ MCP API Endpoints               │"
     echo "│ pgAdmin         │ 8082         │ 80            │ Database Administration         │"
     echo "│ Redis Commander │ 8081         │ 8081          │ Cache Management                │"
     echo "│ Mailhog Web     │ 8025         │ 8025          │ Email Testing Interface         │"
@@ -331,7 +331,7 @@ show_urls() {
     echo "├─────────────────┼─────────────────────────────────────┼──────┼─────────────────────┤"
     echo "│ Streamlit App   │ http://localhost:8501               │ 8501 │ -                   │"
     echo "│ SonarQube       │ http://localhost:9000/sonarqube     │ 9000 │ admin / admin       │"
-    echo "│ MCP Server      │ http://localhost:8000               │ 8000 │ -                   │"
+    echo "│ MCP Server      │ http://localhost:8001               │ 8001 │ -                   │"
     echo "└─────────────────┴─────────────────────────────────────┴──────┴─────────────────────┘"
     echo ""
     echo "🛠️ DEVELOPMENT TOOLS:"
@@ -355,7 +355,7 @@ show_urls() {
     echo "└─────────────────┴─────────────────────────────────────┴──────┴─────────────────────┘"
     echo ""
     echo "🔍 HEALTH CHECKS:"
-    echo "   • MCP Server Health: http://localhost:8000/health"
+    echo "   • MCP Server Health: http://localhost:8001/health"
     echo "   • Streamlit Health: http://localhost:8501/_stcore/health"
     echo "   • SonarQube Status: http://localhost:9000/sonarqube/api/system/status"
 }

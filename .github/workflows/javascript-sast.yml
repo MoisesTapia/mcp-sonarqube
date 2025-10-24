@@ -1,0 +1,550 @@
+name: JavaScript/TypeScript SAST (Static Application Security Testing)
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - '**/*.js'
+      - '**/*.ts'
+      - '**/*.jsx'
+      - '**/*.tsx'
+      - '**/package.json'
+      - '**/package-lock.json'
+      - '**/yarn.lock'
+      - '**/tsconfig.json'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '**/*.js'
+      - '**/*.ts'
+      - '**/*.jsx'
+      - '**/*.tsx'
+      - '**/package.json'
+      - '**/package-lock.json'
+      - '**/yarn.lock'
+      - '**/tsconfig.json'
+  schedule:
+    # Run SAST weekly on Wednesdays at 3 AM UTC
+    - cron: '0 3 * * 3'
+
+env:
+  NODE_VERSION: '18'
+
+jobs:
+  # Security Scanning with Multiple Tools
+  security-scan:
+    name: Security Analysis
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: Install security scanning tools
+      run: |
+        echo "🔧 Installing security scanning tools..."
+        npm install -g npm-audit-resolver audit-ci retire snyk eslint-plugin-security
+        npm install -g @microsoft/eslint-formatter-sarif
+        echo "✅ Security tools installed"
+
+    - name: Install project dependencies
+      run: |
+        if [ -f "package.json" ]; then
+          echo "📦 Installing project dependencies..."
+          npm ci || npm install
+          echo "✅ Dependencies installed"
+        else
+          echo "⚠️ No package.json found, skipping dependency installation"
+        fi
+
+    - name: Run npm audit (Dependency Vulnerability Scan)
+      run: |
+        echo "🔍 Running npm audit for dependency vulnerabilities..."
+        
+        if [ -f "package.json" ]; then
+          # Run npm audit with different output formats
+          npm audit --json > npm-audit-report.json || true
+          npm audit > npm-audit-report.txt || true
+          
+          # Run audit with fix suggestions
+          npm audit --audit-level moderate > npm-audit-moderate.txt || true
+          npm audit --audit-level high > npm-audit-high.txt || true
+          
+          echo "✅ npm audit completed"
+        else
+          echo "⚠️ No package.json found, skipping npm audit"
+        fi
+
+    - name: Run Retire.js (JavaScript Vulnerability Scanner)
+      run: |
+        echo "🔍 Running npm audit for dependency vulnerabilities..."
+        
+        if [ -f "package.json" ]; then
+          # Run npm audit with different output formats
+          npm audit --json > npm-audit-report.json || true
+          npm audit > npm-audit-report.txt || true
+          
+          # Run audit with fix suggestions
+          npm audit --audit-level moderate > npm-audit-moderate.txt || true
+          npm audit --audit-level high > npm-audit-high.txt || true
+          
+          echo "✅ npm audit completed"
+        else
+          echo "⚠️ No package.json found, skipping npm audit"
+        fi
+
+    - name: Run Retire.js (JavaScript Vulnerability Scanner)
+      run: |
+        echo "🔍 Running Retire.js vulnerability scanning..."
+        
+        # Scan for vulnerable JavaScript libraries
+        retire --js --outputformat json --outputpath retire-report.json . || true
+        retire --js --outputformat text --outputpath retire-report.txt . || true
+        
+        # Scan Node.js modules if they exist
+        if [ -d "node_modules" ]; then
+          retire --node --outputformat json --outputpath retire-node-report.json . || true
+        fi
+        
+        echo "✅ Retire.js scan completed"
+
+    - name: Run Snyk (Comprehensive Security Scanner)
+      run: |
+        echo "🔍 Running Snyk security analysis..."
+        
+        if [ -f "package.json" ]; then
+          # Authenticate with Snyk (if token available)
+          if [ -n "${{ secrets.SNYK_TOKEN }}" ]; then
+            snyk auth ${{ secrets.SNYK_TOKEN }}
+            
+            # Run Snyk test for vulnerabilities
+            snyk test --json > snyk-test-report.json || true
+            snyk test > snyk-test-report.txt || true
+            
+            # Run Snyk code analysis
+            snyk code test --json > snyk-code-report.json || true
+            snyk code test > snyk-code-report.txt || true
+            
+            # Monitor project (if in main branch)
+            if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+              snyk monitor || true
+            fi
+          else
+            echo "⚠️ SNYK_TOKEN not configured, running in test mode"
+            snyk test --json > snyk-test-report.json || true
+          fi
+        else
+          echo "⚠️ No package.json found, skipping Snyk analysis"
+        fi
+        
+        echo "✅ Snyk analysis completed"
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+    - name: Run ESLint Security Plugin
+      run: |
+        echo "🔍 Running ESLint security analysis..."
+        
+        # Check if there are JS/TS files to scan
+        if find . -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx" | grep -q .; then
+          # Create temporary ESLint config for security
+          cat > .eslintrc.security.json << 'EOF'
+        {
+          "plugins": ["security"],
+          "extends": ["plugin:security/recommended"],
+          "parserOptions": {
+            "ecmaVersion": 2022,
+            "sourceType": "module"
+          },
+          "env": {
+            "node": true,
+            "browser": true,
+            "es2022": true
+          }
+        }
+        EOF
+          
+          # Run ESLint with security rules
+          npx eslint . --config .eslintrc.security.json --ext .js,.ts,.jsx,.tsx \
+            --format json --output-file eslint-security-report.json || true
+          npx eslint . --config .eslintrc.security.json --ext .js,.ts,.jsx,.tsx \
+            --format @microsoft/eslint-formatter-sarif --output-file eslint-security.sarif || true
+          
+          echo "✅ ESLint security analysis completed"
+        else
+          echo "⚠️ No JavaScript/TypeScript files found, skipping ESLint security analysis"
+        fi
+
+    - name: Generate comprehensive security report
+      run: |
+        echo "📊 Generating comprehensive security report..."
+        
+        cat > js-security-analysis-report.md << 'EOF'
+        # 🔒 JavaScript/TypeScript SAST Security Analysis Report
+        
+        **Generated:** $(date)
+        **Repository:** ${{ github.repository }}
+        **Branch:** ${{ github.ref_name }}
+        **Commit:** ${{ github.sha }}
+        **Node.js Version:** ${{ env.NODE_VERSION }}
+        
+        ## 📋 Executive Summary
+        
+        This report contains comprehensive Static Application Security Testing (SAST) results for JavaScript/TypeScript including:
+        - **Dependency Vulnerability Scanning:** npm audit, Retire.js, Snyk
+        - **Security Linting:** ESLint security plugin
+        - **Code Analysis:** Snyk Code, security patterns detection
+        
+        ## 🔍 Vulnerability Analysis
+        
+        ### npm audit (Dependency Vulnerabilities)
+        EOF
+        
+        # Analyze npm audit results
+        if [ -f npm-audit-report.json ]; then
+          NPM_VULNS=$(jq '.metadata.vulnerabilities.total // 0' npm-audit-report.json 2>/dev/null || echo "0")
+          NPM_CRITICAL=$(jq '.metadata.vulnerabilities.critical // 0' npm-audit-report.json 2>/dev/null || echo "0")
+          NPM_HIGH=$(jq '.metadata.vulnerabilities.high // 0' npm-audit-report.json 2>/dev/null || echo "0")
+          NPM_MODERATE=$(jq '.metadata.vulnerabilities.moderate // 0' npm-audit-report.json 2>/dev/null || echo "0")
+          
+          echo "- **Total Vulnerabilities:** $NPM_VULNS" >> js-security-analysis-report.md
+          echo "- **Critical:** $NPM_CRITICAL" >> js-security-analysis-report.md
+          echo "- **High:** $NPM_HIGH" >> js-security-analysis-report.md
+          echo "- **Moderate:** $NPM_MODERATE" >> js-security-analysis-report.md
+          
+          if [ "$NPM_VULNS" -gt "0" ]; then
+            echo "- **Status:** 🚨 Action Required" >> js-security-analysis-report.md
+          else
+            echo "- **Status:** ✅ No vulnerabilities found" >> js-security-analysis-report.md
+          fi
+        else
+          echo "- **Status:** ℹ️ No package.json found or scan failed" >> js-security-analysis-report.md
+        fi
+        
+        echo "" >> js-security-analysis-report.md
+        echo "### Retire.js (JavaScript Library Vulnerabilities)" >> js-security-analysis-report.md
+        
+        if [ -f retire-report.json ]; then
+          RETIRE_VULNS=$(jq '. | length' retire-report.json 2>/dev/null || echo "0")
+          echo "- **Vulnerable Libraries:** $RETIRE_VULNS" >> js-security-analysis-report.md
+          
+          if [ "$RETIRE_VULNS" -gt "0" ]; then
+            echo "- **Status:** ⚠️ Vulnerable libraries detected" >> js-security-analysis-report.md
+          else
+            echo "- **Status:** ✅ No vulnerable libraries found" >> js-security-analysis-report.md
+          fi
+        else
+          echo "- **Status:** ℹ️ No JavaScript files found or scan failed" >> js-security-analysis-report.md
+        fi
+        
+        echo "" >> js-security-analysis-report.md
+        echo "### Snyk (Comprehensive Security Analysis)" >> js-security-analysis-report.md
+        
+        if [ -f snyk-test-report.json ]; then
+          SNYK_VULNS=$(jq '.vulnerabilities | length' snyk-test-report.json 2>/dev/null || echo "0")
+          echo "- **Vulnerabilities Found:** $SNYK_VULNS" >> js-security-analysis-report.md
+          
+          if [ "$SNYK_VULNS" -gt "0" ]; then
+            echo "- **Status:** 🚨 Vulnerabilities detected" >> js-security-analysis-report.md
+          else
+            echo "- **Status:** ✅ No vulnerabilities found" >> js-security-analysis-report.md
+          fi
+        else
+          echo "- **Status:** ℹ️ Snyk analysis not available" >> js-security-analysis-report.md
+        fi
+        
+        echo "" >> js-security-analysis-report.md
+        echo "### ESLint Security (Code Security Patterns)" >> js-security-analysis-report.md
+        
+        if [ -f eslint-security-report.json ]; then
+          ESLINT_ISSUES=$(jq '. | length' eslint-security-report.json 2>/dev/null || echo "0")
+          echo "- **Security Issues:** $ESLINT_ISSUES" >> js-security-analysis-report.md
+          
+          if [ "$ESLINT_ISSUES" -gt "0" ]; then
+            echo "- **Status:** ⚠️ Security patterns detected" >> js-security-analysis-report.md
+          else
+            echo "- **Status:** ✅ No security issues found" >> js-security-analysis-report.md
+          fi
+        else
+          echo "- **Status:** ℹ️ No JavaScript/TypeScript files found" >> js-security-analysis-report.md
+        fi
+        
+        echo "" >> js-security-analysis-report.md
+        echo "## 🎯 Risk Assessment" >> js-security-analysis-report.md
+        echo "" >> js-security-analysis-report.md
+        
+        # Calculate risk score
+        RISK_SCORE=0
+        if [ -f npm-audit-report.json ]; then
+          CRITICAL_VULNS=$(jq '.metadata.vulnerabilities.critical // 0' npm-audit-report.json 2>/dev/null || echo "0")
+          HIGH_VULNS=$(jq '.metadata.vulnerabilities.high // 0' npm-audit-report.json 2>/dev/null || echo "0")
+          RISK_SCORE=$((RISK_SCORE + CRITICAL_VULNS * 10 + HIGH_VULNS * 5))
+        fi
+        
+        if [ "$RISK_SCORE" -eq "0" ]; then
+          echo "**Overall Risk Level:** 🟢 **LOW** (Score: $RISK_SCORE)" >> js-security-analysis-report.md
+        elif [ "$RISK_SCORE" -le "20" ]; then
+          echo "**Overall Risk Level:** 🟡 **MEDIUM** (Score: $RISK_SCORE)" >> js-security-analysis-report.md
+        else
+          echo "**Overall Risk Level:** 🔴 **HIGH** (Score: $RISK_SCORE)" >> js-security-analysis-report.md
+        fi
+        
+        echo "" >> js-security-analysis-report.md
+        echo "## 📊 Recommendations" >> js-security-analysis-report.md
+        echo "" >> js-security-analysis-report.md
+        echo "### Immediate Actions" >> js-security-analysis-report.md
+        echo "1. **Update Dependencies:** Address all critical and high severity vulnerabilities" >> js-security-analysis-report.md
+        echo "2. **Security Review:** Review and fix security patterns identified by ESLint" >> js-security-analysis-report.md
+        echo "3. **Library Updates:** Replace vulnerable JavaScript libraries" >> js-security-analysis-report.md
+        echo "" >> js-security-analysis-report.md
+        echo "### Long-term Improvements" >> js-security-analysis-report.md
+        echo "1. **Dependency Management:** Implement automated dependency updates (Dependabot)" >> js-security-analysis-report.md
+        echo "2. **Security Policies:** Establish JavaScript/TypeScript security coding standards" >> js-security-analysis-report.md
+        echo "3. **Continuous Monitoring:** Integrate security scanning into development workflow" >> js-security-analysis-report.md
+        echo "4. **Security Training:** Provide JavaScript security training for development team" >> js-security-analysis-report.md
+        
+        echo "✅ JavaScript/TypeScript security analysis report generated"
+
+    - name: Upload SAST results
+      uses: actions/upload-artifact@v3
+      with:
+        name: javascript-sast-reports-${{ github.run_number }}
+        path: |
+          npm-audit-report.json
+          npm-audit-report.txt
+          npm-audit-moderate.txt
+          npm-audit-high.txt
+          retire-report.json
+          retire-report.txt
+          retire-node-report.json
+          snyk-test-report.json
+          snyk-test-report.txt
+          snyk-code-report.json
+          snyk-code-report.txt
+          eslint-security-report.json
+          eslint-security.sarif
+          js-security-analysis-report.md
+
+    - name: Upload SARIF results to GitHub Security
+      if: always()
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: eslint-security.sarif
+      continue-on-error: true
+
+  # Dependency Analysis
+  dependency-analysis:
+    name: Dependency Security Analysis
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: Install dependency analysis tools
+      run: |
+        echo "🔧 Installing dependency analysis tools..."
+        npm install -g npm-check-updates license-checker depcheck
+        npm install -g @cyclonedx/cyclonedx-npm audit-ci
+        echo "✅ Dependency analysis tools installed"
+
+    - name: Install project dependencies
+      run: |
+        if [ -f "package.json" ]; then
+          npm ci || npm install
+        else
+          echo "⚠️ No package.json found, creating minimal package.json for analysis"
+          echo '{"name": "sonarqube-mcp", "version": "1.0.0"}' > package.json
+        fi
+
+    - name: Generate dependency tree
+      run: |
+        echo "📦 Generating dependency tree..."
+        
+        if [ -f "package.json" ]; then
+          # Generate dependency tree
+          npm list --json > dependency-tree.json || true
+          npm list > dependency-tree.txt || true
+          
+          # Generate dependency graph (if graphviz available)
+          npm list --depth=0 > dependency-flat.txt || true
+        fi
+        
+        echo "✅ Dependency tree generated"
+
+    - name: Generate Software Bill of Materials (SBOM)
+      run: |
+        echo "📋 Generating SBOM..."
+        
+        if [ -f "package.json" ]; then
+          # Generate CycloneDX SBOM
+          npx @cyclonedx/cyclonedx-npm --output-file sbom.json || true
+          npx @cyclonedx/cyclonedx-npm --output-format xml --output-file sbom.xml || true
+        fi
+        
+        echo "✅ SBOM generated"
+
+    - name: Check for outdated packages
+      run: |
+        echo "📊 Checking for outdated packages..."
+        
+        if [ -f "package.json" ]; then
+          # Check for outdated packages
+          npm outdated --json > outdated-packages.json || true
+          npm outdated > outdated-packages.txt || true
+          
+          # Check for major updates available
+          ncu --jsonUpgraded > major-updates.json || true
+          ncu > major-updates.txt || true
+        fi
+        
+        echo "✅ Outdated packages check completed"
+
+    - name: License compliance check
+      run: |
+        echo "⚖️ Checking license compliance..."
+        
+        if [ -f "package.json" ]; then
+          # Generate license report
+          license-checker --json > licenses.json || true
+          license-checker --csv > licenses.csv || true
+          license-checker --summary > licenses-summary.txt || true
+          
+          # Check for problematic licenses
+          license-checker --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;Unlicense' \
+            --summary > license-compliance.txt || true
+        fi
+        
+        echo "✅ License compliance check completed"
+
+    - name: Unused dependencies check
+      run: |
+        echo "🧹 Checking for unused dependencies..."
+        
+        if [ -f "package.json" ]; then
+          # Check for unused dependencies
+          depcheck --json > depcheck-report.json || true
+          depcheck > depcheck-report.txt || true
+        fi
+        
+        echo "✅ Unused dependencies check completed"
+
+    - name: Generate dependency security report
+      run: |
+        echo "📋 Generating dependency security report..."
+        
+        cat > js-dependency-security-report.md << 'EOF'
+        # 📦 JavaScript/TypeScript Dependency Security Report
+        
+        **Generated:** $(date)
+        **Node.js Version:** ${{ env.NODE_VERSION }}
+        
+        ## 🔍 Vulnerability Analysis
+        
+        ### npm audit Results
+        EOF
+        
+        if [ -f npm-audit-report.json ]; then
+          NPM_TOTAL=$(jq '.metadata.vulnerabilities.total // 0' npm-audit-report.json 2>/dev/null || echo "0")
+          NPM_CRITICAL=$(jq '.metadata.vulnerabilities.critical // 0' npm-audit-report.json 2>/dev/null || echo "0")
+          NPM_HIGH=$(jq '.metadata.vulnerabilities.high // 0' npm-audit-report.json 2>/dev/null || echo "0")
+          
+          echo "- **Total Vulnerabilities:** $NPM_TOTAL" >> js-dependency-security-report.md
+          echo "- **Critical:** $NPM_CRITICAL" >> js-dependency-security-report.md
+          echo "- **High:** $NPM_HIGH" >> js-dependency-security-report.md
+        fi
+        
+        echo "" >> js-dependency-security-report.md
+        echo "### Retire.js Results" >> js-dependency-security-report.md
+        
+        if [ -f retire-report.json ]; then
+          RETIRE_VULNS=$(jq '. | length' retire-report.json 2>/dev/null || echo "0")
+          echo "- **Vulnerable Libraries:** $RETIRE_VULNS" >> js-dependency-security-report.md
+        fi
+        
+        echo "" >> js-dependency-security-report.md
+        echo "## 📊 Package Analysis" >> js-dependency-security-report.md
+        
+        if [ -f outdated-packages.json ]; then
+          OUTDATED_COUNT=$(jq '. | length' outdated-packages.json 2>/dev/null || echo "0")
+          echo "- **Outdated Packages:** $OUTDATED_COUNT" >> js-dependency-security-report.md
+        fi
+        
+        if [ -f depcheck-report.json ]; then
+          UNUSED_DEPS=$(jq '.dependencies | length' depcheck-report.json 2>/dev/null || echo "0")
+          echo "- **Unused Dependencies:** $UNUSED_DEPS" >> js-dependency-security-report.md
+        fi
+        
+        echo "" >> js-dependency-security-report.md
+        echo "## 🎯 Recommendations" >> js-dependency-security-report.md
+        echo "" >> js-dependency-security-report.md
+        echo "1. **Update Vulnerable Packages:** Address all critical and high severity vulnerabilities" >> js-dependency-security-report.md
+        echo "2. **Remove Unused Dependencies:** Clean up unused packages to reduce attack surface" >> js-dependency-security-report.md
+        echo "3. **License Review:** Ensure all dependencies have compatible licenses" >> js-dependency-security-report.md
+        echo "4. **Regular Audits:** Implement automated dependency auditing" >> js-dependency-security-report.md
+        
+        echo "✅ JavaScript dependency security report generated"
+
+    - name: Upload dependency analysis results
+      uses: actions/upload-artifact@v3
+      with:
+        name: js-dependency-analysis-reports-${{ github.run_number }}
+        path: |
+          dependency-tree.json
+          dependency-tree.txt
+          dependency-flat.txt
+          sbom.json
+          sbom.xml
+          outdated-packages.json
+          outdated-packages.txt
+          major-updates.json
+          major-updates.txt
+          licenses.json
+          licenses.csv
+          licenses-summary.txt
+          license-compliance.txt
+          depcheck-report.json
+          depcheck-report.txt
+          js-dependency-security-report.md
+
+    - name: Comment security summary on PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          
+          if (fs.existsSync('js-security-analysis-report.md')) {
+            const report = fs.readFileSync('js-security-analysis-report.md', 'utf8');
+            
+            // Create summary for PR comment
+            let summary = `## 🔒 JavaScript/TypeScript Security Summary\n\n`;
+            
+            // Add risk assessment
+            if (report.includes('🔴 **HIGH**')) {
+              summary += `**Risk Level:** 🔴 HIGH - Immediate action required\n\n`;
+            } else if (report.includes('🟡 **MEDIUM**')) {
+              summary += `**Risk Level:** 🟡 MEDIUM - Review recommended\n\n`;
+            } else {
+              summary += `**Risk Level:** 🟢 LOW - No critical issues\n\n`;
+            }
+            
+            summary += `<details>\n<summary>📊 Detailed Security Analysis</summary>\n\n${report}\n\n</details>`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+          }

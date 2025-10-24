@@ -40,7 +40,7 @@ class ServerConfig(BaseModel):
     """MCP server configuration."""
 
     host: str = Field("localhost", description="Server host")
-    port: int = Field(8000, description="Server port")
+    port: int = Field(8001, description="Server port")
     log_level: str = Field("INFO", description="Logging level")
     debug: bool = Field(False, description="Debug mode")
 
@@ -64,7 +64,7 @@ class MCPServerSettings(BaseSettings):
 
     # Server configuration
     server_host: str = Field("localhost", description="Server host")
-    server_port: int = Field(8000, description="Server port")
+    server_port: int = Field(8001, description="Server port")
     server_log_level: str = Field("INFO", description="Logging level")
     server_debug: bool = Field(False, description="Debug mode")
 

@@ -61,7 +61,7 @@ class AdvancedVisualization:
                 fig_coverage.update_layout(xaxis_tickangle=-45)
                 fig_coverage.add_hline(y=80, line_dash="dash", line_color="green", 
                                      annotation_text="Target: 80%")
-                st.plotly_chart(fig_coverage, use_container_width=True)
+                st.plotly_chart(fig_coverage, width="stretch")
         
         with col2:
             # Technical debt trend
@@ -75,7 +75,7 @@ class AdvancedVisualization:
                     color_continuous_scale='Reds'
                 )
                 fig_debt.update_layout(xaxis_tickangle=-45)
-                st.plotly_chart(fig_debt, use_container_width=True)
+                st.plotly_chart(fig_debt, width="stretch")
         
         # Historical trends simulation (in real implementation, this would use historical data)
         st.subheader("📈 Historical Trends Simulation")
@@ -94,7 +94,7 @@ class AdvancedVisualization:
                 facet_col_wrap=2
             )
             fig_historical.update_layout(height=600)
-            st.plotly_chart(fig_historical, use_container_width=True)
+            st.plotly_chart(fig_historical, width="stretch")
     
     @staticmethod
     def _render_quality_gate_analysis(df: pd.DataFrame) -> None:
@@ -124,7 +124,7 @@ class AdvancedVisualization:
                 color_discrete_map=colors
             )
             fig_qg.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(fig_qg, use_container_width=True)
+            st.plotly_chart(fig_qg, width="stretch")
         
         with col2:
             # Quality Gate failure reasons analysis
@@ -154,7 +154,7 @@ class AdvancedVisualization:
                         color_continuous_scale='Reds'
                     )
                     fig_reasons.update_layout(xaxis_tickangle=-45)
-                    st.plotly_chart(fig_reasons, use_container_width=True)
+                    st.plotly_chart(fig_reasons, width="stretch")
             else:
                 st.success("🎉 All projects are passing their Quality Gates!")
         
@@ -187,7 +187,7 @@ class AdvancedVisualization:
                 aspect='auto'
             )
             fig_heatmap.update_layout(height=max(400, len(conditions_df) * 20))
-            st.plotly_chart(fig_heatmap, use_container_width=True)
+            st.plotly_chart(fig_heatmap, width="stretch")
     
     @staticmethod
     def _render_issue_analysis(df: pd.DataFrame) -> None:
@@ -224,7 +224,7 @@ class AdvancedVisualization:
                 }
             )
             fig_issues.update_layout(xaxis_tickangle=-45)
-            st.plotly_chart(fig_issues, use_container_width=True)
+            st.plotly_chart(fig_issues, width="stretch")
         
         with col2:
             # Issue density analysis (issues per KLOC)
@@ -245,7 +245,7 @@ class AdvancedVisualization:
                     labels={'ncloc': 'Lines of Code', 'total_issues': 'Total Issues'},
                     color_continuous_scale='Reds'
                 )
-                st.plotly_chart(fig_density, use_container_width=True)
+                st.plotly_chart(fig_density, width="stretch")
         
         # Top problematic projects
         st.subheader("🚨 Most Problematic Projects")
@@ -268,7 +268,7 @@ class AdvancedVisualization:
                     }
                 )
                 fig_top_problems.update_layout(xaxis_tickangle=-45)
-                st.plotly_chart(fig_top_problems, use_container_width=True)
+                st.plotly_chart(fig_top_problems, width="stretch")
     
     @staticmethod
     def _render_size_complexity_analysis(df: pd.DataFrame) -> None:
@@ -292,7 +292,7 @@ class AdvancedVisualization:
                     title='Project Size Distribution (Lines of Code)',
                     labels={'ncloc': 'Lines of Code', 'count': 'Number of Projects'}
                 )
-                st.plotly_chart(fig_size, use_container_width=True)
+                st.plotly_chart(fig_size, width="stretch")
         
         with col2:
             # Complexity vs Size correlation
@@ -306,7 +306,7 @@ class AdvancedVisualization:
                     labels={'ncloc': 'Lines of Code', 'complexity': 'Cyclomatic Complexity'},
                     trendline='ols'
                 )
-                st.plotly_chart(fig_complexity, use_container_width=True)
+                st.plotly_chart(fig_complexity, width="stretch")
         
         # Technical debt ratio analysis
         if 'technical_debt' in df.columns and 'ncloc' in df.columns:
@@ -325,7 +325,7 @@ class AdvancedVisualization:
                 color_continuous_scale='Reds'
             )
             fig_debt_ratio.update_layout(xaxis_tickangle=-45)
-            st.plotly_chart(fig_debt_ratio, use_container_width=True)
+            st.plotly_chart(fig_debt_ratio, width="stretch")
     
     @staticmethod
     def _generate_historical_data(df: pd.DataFrame) -> Optional[pd.DataFrame]:

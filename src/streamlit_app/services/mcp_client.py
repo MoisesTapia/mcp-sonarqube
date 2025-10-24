@@ -54,7 +54,7 @@ class MCPClient:
     def __init__(self, server_url: Optional[str] = None):
         """Initialize MCP client."""
         # Use HTTP connection to MCP server container
-        self.server_url = server_url or "http://sonarqube-mcp-server:8001"
+        self.server_url = server_url or "http://mcp-server:8001"
         self.logger = get_logger(__name__)
         self._connection_status = "disconnected"
         self._last_health_check = None
@@ -248,27 +248,56 @@ class MCPClient:
     def call_tool_sync(self, tool_name: str, parameters: Dict[str, Any] = None) -> MCPToolResult:
         """Synchronous wrapper for tool calls."""
         try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        return loop.run_until_complete(self.call_tool(tool_name, parameters))
+            # Try to get existing loop
+            try:
+                loop = asyncio.get_running_loop()
+                # If we're in an async context, we can't use run_until_complete
+                # Create a new thread to run the async code
+                import concurrent.futures
+                import threading
+                
+                def run_in_thread():
+                    new_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(new_loop)
+                    try:
+                        return new_loop.run_until_complete(self.call_tool(tool_name, parameters))
+                    finally:
+                        new_loop.close()
+                
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(run_in_thread)
+                    return future.result()
+                    
+            except RuntimeError:
+                # No running loop, safe to create one
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    return loop.run_until_complete(self.call_tool(tool_name, parameters))
+                finally:
+                    loop.close()
+        except Exception as e:
+            self.logger.error(f"Error in call_tool_sync: {e}")
+            return MCPToolResult(success=False, error=str(e))
     
     async def check_health(self) -> bool:
         """Check MCP server health."""
         try:
-            result = await self.call_tool("health_check")
+            import httpx
             
-            if result.success and result.data:
-                status = result.data.get("status", "unhealthy")
-                self.connection_status = "connected" if status == "healthy" else "error"
-                self._ensure_session_state()
-                st.session_state.mcp_client_state["last_health_check"] = datetime.now().isoformat()
-                return status == "healthy"
-            else:
-                self.connection_status = "error"
-                return False
+            # Direct HTTP call to avoid recursion
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(f"{self.server_url}/health")
+                if response.status_code == 200:
+                    health_data = response.json()
+                    status = health_data.get("status", "unhealthy")
+                    self.connection_status = "connected" if status == "healthy" else "error"
+                    self._ensure_session_state()
+                    st.session_state.mcp_client_state["last_health_check"] = datetime.now().isoformat()
+                    return status == "healthy"
+                else:
+                    self.connection_status = "error"
+                    return False
                 
         except Exception as e:
             self.logger.error(f"Health check failed: {e}")
@@ -278,12 +307,37 @@ class MCPClient:
     def check_health_sync(self) -> bool:
         """Synchronous health check."""
         try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        return loop.run_until_complete(self.check_health())
+            # Try to get existing loop
+            try:
+                loop = asyncio.get_running_loop()
+                # If we're in an async context, we can't use run_until_complete
+                # Create a new thread to run the async code
+                import concurrent.futures
+                import threading
+                
+                def run_in_thread():
+                    new_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(new_loop)
+                    try:
+                        return new_loop.run_until_complete(self.check_health())
+                    finally:
+                        new_loop.close()
+                
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(run_in_thread)
+                    return future.result()
+                    
+            except RuntimeError:
+                # No running loop, safe to create one
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    return loop.run_until_complete(self.check_health())
+                finally:
+                    loop.close()
+        except Exception as e:
+            self.logger.error(f"Error in check_health_sync: {e}")
+            return False
     
     def get_available_tools(self) -> List[Dict[str, Any]]:
         """Get list of available MCP tools."""

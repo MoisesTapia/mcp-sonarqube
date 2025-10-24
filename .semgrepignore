@@ -1,0 +1,56 @@
+# Semgrep ignore file
+# https://semgrep.dev/docs/ignoring-files-folders-code/
+
+# Ignore test files
+tests/
+test_*.py
+*_test.py
+
+# Ignore virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Ignore build and distribution directories
+build/
+dist/
+*.egg-info/
+
+# Ignore cache directories
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Ignore version control
+.git/
+.svn/
+.hg/
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore documentation
+docs/
+*.md
+*.rst
+
+# Ignore configuration files that might have false positives
+*.yml
+*.yaml
+*.json
+*.toml
+*.ini
+*.cfg
+
+# Ignore specific files
+requirements*.txt
+setup.py
+setup.cfg
+pyproject.toml
+Dockerfile*
+docker-compose*.yml

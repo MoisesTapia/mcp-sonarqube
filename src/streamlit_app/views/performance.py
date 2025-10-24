@@ -119,7 +119,7 @@ def render_performance_metrics():
         )
         fig_response.add_hline(y=2.0, line_dash="dash", line_color="red", 
                               annotation_text="Threshold (2s)")
-        st.plotly_chart(fig_response, use_container_width=True)
+        st.plotly_chart(fig_response, width="stretch")
     else:
         st.info("No response time data available for the last hour")
     
@@ -163,7 +163,7 @@ def render_performance_metrics():
             hovermode='x unified'
         )
         
-        st.plotly_chart(fig_system, use_container_width=True)
+        st.plotly_chart(fig_system, width="stretch")
     else:
         st.info("No system metrics data available for the last hour")
 
@@ -207,7 +207,7 @@ def render_cache_performance():
                 title="Cache Hit/Miss Ratio",
                 color_discrete_map={'Hits': '#00ff00', 'Misses': '#ff0000'}
             )
-            st.plotly_chart(fig_cache, use_container_width=True)
+            st.plotly_chart(fig_cache, width="stretch")
         else:
             st.info("No cache activity recorded yet")
 
@@ -277,7 +277,7 @@ def render_api_performance():
             labels={"avg_response_time": "Response Time (seconds)"}
         )
         fig_response.update_layout(xaxis_tickangle=45)
-        st.plotly_chart(fig_response, use_container_width=True)
+        st.plotly_chart(fig_response, width="stretch")
     
     with col2:
         # API calls chart
@@ -289,7 +289,7 @@ def render_api_performance():
             labels={"calls": "Number of Calls"}
         )
         fig_calls.update_layout(xaxis_tickangle=45)
-        st.plotly_chart(fig_calls, use_container_width=True)
+        st.plotly_chart(fig_calls, width="stretch")
     
     # API performance table
     st.write("**API Endpoint Performance**")
@@ -303,7 +303,7 @@ def render_api_performance():
         "error_rate": "Error Rate (%)"
     })
     
-    st.dataframe(df_display, use_container_width=True)
+    st.dataframe(df_display, width="stretch")
 
 
 def render_optimization_recommendations():

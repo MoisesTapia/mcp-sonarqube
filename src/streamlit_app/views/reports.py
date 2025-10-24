@@ -209,7 +209,7 @@ def render_custom_chart_builder(projects_data: List[Dict[str, Any]], chart_type:
                 height=chart_height
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
             
             # Export chart data
             if st.button("📥 Export Chart Data"):
@@ -260,7 +260,7 @@ def render_comparison_matrix(projects_data: List[Dict[str, Any]]):
                 filtered_data, selected_metrics
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
             
             # Export comparison data
             if st.button("📥 Export Comparison Data"):
@@ -360,7 +360,7 @@ def render_trend_analysis(projects_data: List[Dict[str, Any]]):
             )
             
             fig.update_layout(height=500)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
             
             # Trend summary
             st.subheader("📊 Trend Summary")
@@ -550,7 +550,7 @@ def render_data_export(service: SonarQubeService):
                 if export_type == "projects_summary":
                     projects = service.get_projects()
                     df = pd.DataFrame(projects)
-                    st.dataframe(df, use_container_width=True)
+                    st.dataframe(df, width="stretch")
                     DataExporter.render_export_options(df, "projects_summary")
                 
                 elif export_type == "detailed_metrics":
@@ -573,7 +573,7 @@ def render_data_export(service: SonarQubeService):
                             continue
                     
                     df = pd.DataFrame(detailed_data)
-                    st.dataframe(df, use_container_width=True)
+                    st.dataframe(df, width="stretch")
                     DataExporter.render_export_options(df, "detailed_metrics")
                 
                 elif export_type == "quality_gates":
@@ -593,7 +593,7 @@ def render_data_export(service: SonarQubeService):
                             continue
                     
                     df = pd.DataFrame(qg_data)
-                    st.dataframe(df, use_container_width=True)
+                    st.dataframe(df, width="stretch")
                     DataExporter.render_export_options(df, "quality_gates")
                 
                 elif export_type == "custom_query":

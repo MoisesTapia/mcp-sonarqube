@@ -175,7 +175,7 @@ def render_issue_workflow_visualization(issues: List[Dict[str, Any]]):
                 names=list(status_counts.keys()),
                 title="Issues by Status"
             )
-            st.plotly_chart(fig_status, use_container_width=True)
+            st.plotly_chart(fig_status, width="stretch")
         
         with col2:
             # Type distribution
@@ -189,7 +189,7 @@ def render_issue_workflow_visualization(issues: List[Dict[str, Any]]):
                 names=list(type_counts.keys()),
                 title="Issues by Type"
             )
-            st.plotly_chart(fig_type, use_container_width=True)
+            st.plotly_chart(fig_type, width="stretch")
 
 
 def render_bulk_operations(selected_issues: List[str]):
@@ -321,7 +321,7 @@ def render_issue_table(issues: List[Dict[str, Any]]) -> List[str]:
             ),
         },
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
     )
     
     # Get selected issues

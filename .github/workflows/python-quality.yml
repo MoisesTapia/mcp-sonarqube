@@ -1,0 +1,614 @@
+name: Python Code Quality & Standards
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  PYTHON_VERSION: [3.11, 3.13]
+
+jobs:
+  # Code Formatting and Style
+  formatting:
+    name: Code Formatting & Style
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-quality-pip-${{ hashFiles('**/requirements-dev.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-quality-pip-
+
+    - name: Install code quality tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements-dev.txt
+        pip install black isort autopep8 yapf
+
+    - name: Run Black (Code Formatting Check)
+      run: |
+        echo "🎨 Checking code formatting with Black..."
+        black --check --diff --color src/ tests/
+        echo "✅ Black formatting check completed"
+
+    - name: Run isort (Import Sorting Check)
+      run: |
+        echo "📦 Checking import sorting with isort..."
+        isort --check-only --diff --color src/ tests/
+        echo "✅ isort check completed"
+
+    - name: Check PEP 8 compliance with autopep8
+      run: |
+        echo "📏 Checking PEP 8 compliance..."
+        autopep8 --diff --exit-code --recursive src/ tests/
+        echo "✅ PEP 8 compliance check completed"
+
+    - name: Generate formatting report
+      if: failure()
+      run: |
+        echo "📋 Generating formatting report..."
+        
+        cat > formatting-report.md << 'EOF'
+        # 🎨 Code Formatting Report
+        
+        **Generated:** $(date)
+        **Status:** ❌ Formatting issues found
+        
+        ## Issues Found
+        
+        ### Black Formatting Issues
+        EOF
+        
+        echo '```diff' >> formatting-report.md
+        black --check --diff src/ tests/ >> formatting-report.md || true
+        echo '```' >> formatting-report.md
+        
+        echo "" >> formatting-report.md
+        echo "### Import Sorting Issues" >> formatting-report.md
+        echo '```diff' >> formatting-report.md
+        isort --check-only --diff src/ tests/ >> formatting-report.md || true
+        echo '```' >> formatting-report.md
+        
+        echo "" >> formatting-report.md
+        echo "## 🔧 How to Fix" >> formatting-report.md
+        echo "" >> formatting-report.md
+        echo "Run the following commands to fix formatting issues:" >> formatting-report.md
+        echo '```bash' >> formatting-report.md
+        echo "# Fix formatting" >> formatting-report.md
+        echo "black src/ tests/" >> formatting-report.md
+        echo "" >> formatting-report.md
+        echo "# Fix import sorting" >> formatting-report.md
+        echo "isort src/ tests/" >> formatting-report.md
+        echo '```' >> formatting-report.md
+
+    - name: Upload formatting report
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: formatting-report-${{ github.run_number }}
+        path: formatting-report.md
+
+  # Linting and Code Analysis
+  linting:
+    name: Linting & Code Analysis
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-linting-pip-${{ hashFiles('**/requirements-dev.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-linting-pip-
+
+    - name: Install linting tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements-dev.txt
+        pip install ruff flake8 pylint pydocstyle
+
+    - name: Run Ruff (Fast Python Linter)
+      run: |
+        echo "⚡ Running Ruff linting..."
+        
+        # Run Ruff with different rule sets
+        ruff check src/ tests/ --output-format=json > ruff-report.json || true
+        ruff check src/ tests/ --output-format=text > ruff-report.txt || true
+        ruff check src/ tests/ --output-format=github || true
+        
+        # Check specific rule categories
+        echo "Checking import sorting..."
+        ruff check --select I src/ tests/ || true
+        
+        echo "Checking code complexity..."
+        ruff check --select C90 src/ tests/ || true
+        
+        echo "Checking documentation..."
+        ruff check --select D src/ tests/ || true
+        
+        echo "✅ Ruff linting completed"
+
+    - name: Run Flake8 (Style Guide Enforcement)
+      run: |
+        echo "📏 Running Flake8 style guide enforcement..."
+        
+        flake8 src/ tests/ --format=json --output-file=flake8-report.json || true
+        flake8 src/ tests/ --format=default --output-file=flake8-report.txt || true
+        
+        # Check specific aspects
+        echo "Checking line length..."
+        flake8 src/ tests/ --select=E501 || true
+        
+        echo "Checking complexity..."
+        flake8 src/ tests/ --select=C901 || true
+        
+        echo "✅ Flake8 check completed"
+
+    - name: Run Pylint (Comprehensive Code Analysis)
+      run: |
+        echo "🔍 Running Pylint comprehensive analysis..."
+        
+        # Run Pylint with different output formats
+        pylint src/ --output-format=json > pylint-report.json || true
+        pylint src/ --output-format=text > pylint-report.txt || true
+        pylint src/ --output-format=colorized || true
+        
+        # Generate Pylint score
+        PYLINT_SCORE=$(pylint src/ --output-format=text | grep "Your code has been rated" | grep -oE '[0-9]+\.[0-9]+' | head -1 || echo "0.0")
+        echo "Pylint Score: $PYLINT_SCORE/10.0"
+        echo "PYLINT_SCORE=$PYLINT_SCORE" >> $GITHUB_ENV
+        
+        echo "✅ Pylint analysis completed"
+
+    - name: Run pydocstyle (Docstring Conventions)
+      run: |
+        echo "📚 Checking docstring conventions..."
+        
+        pydocstyle src/ --format=json > pydocstyle-report.json || true
+        pydocstyle src/ > pydocstyle-report.txt || true
+        
+        echo "✅ Docstring check completed"
+
+    - name: Generate comprehensive linting report
+      run: |
+        echo "📊 Generating comprehensive linting report..."
+        
+        cat > linting-report.md << 'EOF'
+        # 🔍 Python Code Quality Analysis Report
+        
+        **Generated:** $(date)
+        **Python Version:** ${{ env.PYTHON_VERSION }}
+        
+        ## 📋 Quality Metrics Summary
+        
+        ### Pylint Score
+        EOF
+        
+        if [ -n "${PYLINT_SCORE:-}" ]; then
+          echo "- **Overall Score:** ${PYLINT_SCORE}/10.0" >> linting-report.md
+          
+          # Determine quality level
+          SCORE_INT=$(echo "$PYLINT_SCORE" | cut -d'.' -f1)
+          if [ "$SCORE_INT" -ge "8" ]; then
+            echo "- **Quality Level:** 🟢 Excellent" >> linting-report.md
+          elif [ "$SCORE_INT" -ge "6" ]; then
+            echo "- **Quality Level:** 🟡 Good" >> linting-report.md
+          elif [ "$SCORE_INT" -ge "4" ]; then
+            echo "- **Quality Level:** 🟠 Needs Improvement" >> linting-report.md
+          else
+            echo "- **Quality Level:** 🔴 Poor" >> linting-report.md
+          fi
+        fi
+        
+        echo "" >> linting-report.md
+        echo "### Linting Results" >> linting-report.md
+        
+        # Ruff results
+        if [ -f ruff-report.json ]; then
+          RUFF_ISSUES=$(jq '. | length' ruff-report.json 2>/dev/null || echo "0")
+          echo "- **Ruff Issues:** $RUFF_ISSUES" >> linting-report.md
+        fi
+        
+        # Flake8 results
+        if [ -f flake8-report.json ]; then
+          FLAKE8_ISSUES=$(jq '. | length' flake8-report.json 2>/dev/null || echo "0")
+          echo "- **Flake8 Issues:** $FLAKE8_ISSUES" >> linting-report.md
+        fi
+        
+        # Pylint results
+        if [ -f pylint-report.json ]; then
+          PYLINT_ISSUES=$(jq '. | length' pylint-report.json 2>/dev/null || echo "0")
+          echo "- **Pylint Issues:** $PYLINT_ISSUES" >> linting-report.md
+        fi
+        
+        # Pydocstyle results
+        if [ -f pydocstyle-report.json ]; then
+          PYDOCSTYLE_ISSUES=$(jq '. | length' pydocstyle-report.json 2>/dev/null || echo "0")
+          echo "- **Documentation Issues:** $PYDOCSTYLE_ISSUES" >> linting-report.md
+        fi
+        
+        echo "" >> linting-report.md
+        echo "## 📊 Detailed Analysis" >> linting-report.md
+        
+        # Add top issues from each tool
+        echo "" >> linting-report.md
+        echo "### Top Ruff Issues" >> linting-report.md
+        if [ -f ruff-report.txt ] && [ -s ruff-report.txt ]; then
+          echo '```' >> linting-report.md
+          head -20 ruff-report.txt >> linting-report.md
+          echo '```' >> linting-report.md
+        else
+          echo "✅ No issues found" >> linting-report.md
+        fi
+        
+        echo "" >> linting-report.md
+        echo "### Top Pylint Issues" >> linting-report.md
+        if [ -f pylint-report.txt ] && [ -s pylint-report.txt ]; then
+          echo '```' >> linting-report.md
+          head -20 pylint-report.txt >> linting-report.md
+          echo '```' >> linting-report.md
+        else
+          echo "✅ No issues found" >> linting-report.md
+        fi
+        
+        echo "" >> linting-report.md
+        echo "## 🎯 Recommendations" >> linting-report.md
+        echo "" >> linting-report.md
+        echo "### Code Quality Improvements" >> linting-report.md
+        echo "1. **Address High Priority Issues:** Focus on errors and warnings first" >> linting-report.md
+        echo "2. **Improve Documentation:** Add missing docstrings and improve existing ones" >> linting-report.md
+        echo "3. **Reduce Complexity:** Break down complex functions and classes" >> linting-report.md
+        echo "4. **Follow PEP 8:** Ensure consistent code style across the project" >> linting-report.md
+        echo "5. **Regular Reviews:** Implement code review process with quality gates" >> linting-report.md
+        
+        echo "" >> linting-report.md
+        echo "### Tools Configuration" >> linting-report.md
+        echo "Consider configuring the following files for consistent quality checks:" >> linting-report.md
+        echo "- \`pyproject.toml\` - Ruff and other tool configurations" >> linting-report.md
+        echo "- \`.flake8\` - Flake8 configuration" >> linting-report.md
+        echo "- \`pylintrc\` - Pylint configuration" >> linting-report.md
+        
+        echo "✅ Comprehensive linting report generated"
+
+    - name: Upload linting results
+      uses: actions/upload-artifact@v3
+      with:
+        name: linting-reports-${{ github.run_number }}
+        path: |
+          ruff-report.json
+          ruff-report.txt
+          flake8-report.json
+          flake8-report.txt
+          pylint-report.json
+          pylint-report.txt
+          pydocstyle-report.json
+          pydocstyle-report.txt
+          linting-report.md
+
+    - name: Comment quality summary on PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          
+          if (fs.existsSync('linting-report.md')) {
+            const report = fs.readFileSync('linting-report.md', 'utf8');
+            
+            // Create a summary for PR comment
+            const pylintScore = process.env.PYLINT_SCORE || 'N/A';
+            
+            let summary = `## 🔍 Code Quality Summary\n\n`;
+            summary += `**Pylint Score:** ${pylintScore}/10.0\n\n`;
+            
+            // Add quality badge
+            const scoreNum = parseFloat(pylintScore);
+            if (scoreNum >= 8) {
+              summary += `**Quality Level:** 🟢 Excellent\n\n`;
+            } else if (scoreNum >= 6) {
+              summary += `**Quality Level:** 🟡 Good\n\n`;
+            } else if (scoreNum >= 4) {
+              summary += `**Quality Level:** 🟠 Needs Improvement\n\n`;
+            } else {
+              summary += `**Quality Level:** 🔴 Poor\n\n`;
+            }
+            
+            summary += `<details>\n<summary>📊 Detailed Quality Report</summary>\n\n${report}\n\n</details>`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+          }
+
+  # Type Checking
+  type-checking:
+    name: Type Checking & Analysis
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-typing-pip-${{ hashFiles('**/requirements-dev.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-typing-pip-
+
+    - name: Install type checking tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements-dev.txt
+        pip install mypy pyright pyre-check
+
+    - name: Run MyPy (Static Type Checker)
+      run: |
+        echo "🔍 Running MyPy static type checking..."
+        
+        # Run MyPy with different output formats
+        mypy src/ --json-report mypy-report --html-report mypy-html-report || true
+        mypy src/ > mypy-report.txt 2>&1 || true
+        
+        # Check specific aspects
+        echo "Checking for untyped definitions..."
+        mypy src/ --disallow-untyped-defs || true
+        
+        echo "Checking for missing imports..."
+        mypy src/ --ignore-missing-imports || true
+        
+        echo "✅ MyPy type checking completed"
+
+    - name: Run Pyright (Microsoft's Type Checker)
+      run: |
+        echo "🔍 Running Pyright type checking..."
+        
+        # Install Node.js for Pyright
+        npm install -g pyright
+        
+        # Run Pyright
+        pyright src/ --outputjson > pyright-report.json || true
+        pyright src/ > pyright-report.txt || true
+        
+        echo "✅ Pyright type checking completed"
+
+    - name: Generate type checking report
+      run: |
+        echo "📊 Generating type checking report..."
+        
+        cat > type-checking-report.md << 'EOF'
+        # 🔍 Type Checking Analysis Report
+        
+        **Generated:** $(date)
+        **Python Version:** ${{ env.PYTHON_VERSION }}
+        
+        ## 📋 Type Coverage Summary
+        
+        ### MyPy Results
+        EOF
+        
+        if [ -f mypy-report.txt ]; then
+          MYPY_ERRORS=$(grep -c "error:" mypy-report.txt || echo "0")
+          MYPY_WARNINGS=$(grep -c "warning:" mypy-report.txt || echo "0")
+          MYPY_NOTES=$(grep -c "note:" mypy-report.txt || echo "0")
+          
+          echo "- **Errors:** $MYPY_ERRORS" >> type-checking-report.md
+          echo "- **Warnings:** $MYPY_WARNINGS" >> type-checking-report.md
+          echo "- **Notes:** $MYPY_NOTES" >> type-checking-report.md
+          
+          if [ "$MYPY_ERRORS" -eq "0" ]; then
+            echo "- **Status:** ✅ No type errors found" >> type-checking-report.md
+          else
+            echo "- **Status:** ❌ Type errors found" >> type-checking-report.md
+          fi
+        fi
+        
+        echo "" >> type-checking-report.md
+        echo "### Pyright Results" >> type-checking-report.md
+        
+        if [ -f pyright-report.json ]; then
+          PYRIGHT_ERRORS=$(jq '.summary.errorCount // 0' pyright-report.json)
+          PYRIGHT_WARNINGS=$(jq '.summary.warningCount // 0' pyright-report.json)
+          PYRIGHT_INFO=$(jq '.summary.informationCount // 0' pyright-report.json)
+          
+          echo "- **Errors:** $PYRIGHT_ERRORS" >> type-checking-report.md
+          echo "- **Warnings:** $PYRIGHT_WARNINGS" >> type-checking-report.md
+          echo "- **Information:** $PYRIGHT_INFO" >> type-checking-report.md
+          
+          if [ "$PYRIGHT_ERRORS" -eq "0" ]; then
+            echo "- **Status:** ✅ No type errors found" >> type-checking-report.md
+          else
+            echo "- **Status:** ❌ Type errors found" >> type-checking-report.md
+          fi
+        fi
+        
+        echo "" >> type-checking-report.md
+        echo "## 📊 Detailed Issues" >> type-checking-report.md
+        
+        if [ -f mypy-report.txt ] && [ -s mypy-report.txt ]; then
+          echo "" >> type-checking-report.md
+          echo "### MyPy Issues" >> type-checking-report.md
+          echo '```' >> type-checking-report.md
+          head -30 mypy-report.txt >> type-checking-report.md
+          echo '```' >> type-checking-report.md
+        fi
+        
+        if [ -f pyright-report.txt ] && [ -s pyright-report.txt ]; then
+          echo "" >> type-checking-report.md
+          echo "### Pyright Issues" >> type-checking-report.md
+          echo '```' >> type-checking-report.md
+          head -30 pyright-report.txt >> type-checking-report.md
+          echo '```' >> type-checking-report.md
+        fi
+        
+        echo "" >> type-checking-report.md
+        echo "## 🎯 Type Annotation Recommendations" >> type-checking-report.md
+        echo "" >> type-checking-report.md
+        echo "1. **Add Missing Type Hints:** Annotate function parameters and return types" >> type-checking-report.md
+        echo "2. **Use Generic Types:** Leverage typing.Generic for reusable components" >> type-checking-report.md
+        echo "3. **Protocol Usage:** Use typing.Protocol for structural subtyping" >> type-checking-report.md
+        echo "4. **Strict Mode:** Consider enabling strict mode in mypy configuration" >> type-checking-report.md
+        echo "5. **Type Stubs:** Create .pyi files for external libraries without types" >> type-checking-report.md
+        
+        echo "✅ Type checking report generated"
+
+    - name: Upload type checking results
+      uses: actions/upload-artifact@v3
+      with:
+        name: type-checking-reports-${{ github.run_number }}
+        path: |
+          mypy-report/
+          mypy-html-report/
+          mypy-report.txt
+          pyright-report.json
+          pyright-report.txt
+          type-checking-report.md
+
+  # Code Complexity Analysis
+  complexity-analysis:
+    name: Code Complexity Analysis
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install complexity analysis tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install radon xenon mccabe lizard
+
+    - name: Run Radon (Complexity Metrics)
+      run: |
+        echo "📊 Running Radon complexity analysis..."
+        
+        # Cyclomatic complexity
+        radon cc src/ --json > radon-cc.json
+        radon cc src/ > radon-cc.txt
+        
+        # Maintainability index
+        radon mi src/ --json > radon-mi.json
+        radon mi src/ > radon-mi.txt
+        
+        # Raw metrics
+        radon raw src/ --json > radon-raw.json
+        radon raw src/ > radon-raw.txt
+        
+        # Halstead metrics
+        radon hal src/ --json > radon-hal.json
+        radon hal src/ > radon-hal.txt
+        
+        echo "✅ Radon analysis completed"
+
+    - name: Run Xenon (Complexity Monitoring)
+      run: |
+        echo "🔍 Running Xenon complexity monitoring..."
+        
+        # Check for complex functions
+        xenon src/ --max-absolute B --max-modules A --max-average A > xenon-report.txt || true
+        
+        echo "✅ Xenon analysis completed"
+
+    - name: Run Lizard (Multi-language Complexity)
+      run: |
+        echo "🦎 Running Lizard complexity analysis..."
+        
+        lizard src/ -o lizard-report.txt
+        lizard src/ --xml > lizard-report.xml
+        
+        echo "✅ Lizard analysis completed"
+
+    - name: Generate complexity report
+      run: |
+        echo "📊 Generating complexity analysis report..."
+        
+        cat > complexity-report.md << 'EOF'
+        # 📊 Code Complexity Analysis Report
+        
+        **Generated:** $(date)
+        
+        ## 🎯 Complexity Metrics Overview
+        
+        ### Cyclomatic Complexity (Radon)
+        EOF
+        
+        if [ -f radon-cc.txt ]; then
+          echo '```' >> complexity-report.md
+          head -20 radon-cc.txt >> complexity-report.md
+          echo '```' >> complexity-report.md
+        fi
+        
+        echo "" >> complexity-report.md
+        echo "### Maintainability Index" >> complexity-report.md
+        
+        if [ -f radon-mi.txt ]; then
+          echo '```' >> complexity-report.md
+          head -20 radon-mi.txt >> complexity-report.md
+          echo '```' >> complexity-report.md
+        fi
+        
+        echo "" >> complexity-report.md
+        echo "### Complex Functions (Xenon)" >> complexity-report.md
+        
+        if [ -f xenon-report.txt ] && [ -s xenon-report.txt ]; then
+          echo '```' >> complexity-report.md
+          cat xenon-report.txt >> complexity-report.md
+          echo '```' >> complexity-report.md
+        else
+          echo "✅ No overly complex functions found" >> complexity-report.md
+        fi
+        
+        echo "" >> complexity-report.md
+        echo "## 🎯 Complexity Reduction Recommendations" >> complexity-report.md
+        echo "" >> complexity-report.md
+        echo "1. **Refactor Complex Functions:** Break down functions with high cyclomatic complexity" >> complexity-report.md
+        echo "2. **Extract Methods:** Use extract method refactoring for long functions" >> complexity-report.md
+        echo "3. **Reduce Nesting:** Minimize nested if/for statements" >> complexity-report.md
+        echo "4. **Single Responsibility:** Ensure each function has a single, clear purpose" >> complexity-report.md
+        echo "5. **Design Patterns:** Apply appropriate design patterns to reduce complexity" >> complexity-report.md
+        
+        echo "✅ Complexity analysis report generated"
+
+    - name: Upload complexity analysis results
+      uses: actions/upload-artifact@v3
+      with:
+        name: complexity-analysis-reports-${{ github.run_number }}
+        path: |
+          radon-*.json
+          radon-*.txt
+          xenon-report.txt
+          lizard-report.txt
+          lizard-report.xml
+          complexity-report.md

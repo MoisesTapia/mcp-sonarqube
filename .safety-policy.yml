@@ -1,0 +1,66 @@
+# Safety policy configuration
+# https://docs.safetycli.com/safety-docs/
+
+# Security policy configuration
+security:
+  # Ignore specific vulnerabilities (use with caution)
+  ignore-vulnerabilities:
+    # Example: ignore a specific CVE if it's not applicable
+    # - "12345"  # CVE-YYYY-XXXXX - Reason for ignoring
+  
+  # Ignore specific packages (use with extreme caution)
+  ignore-packages:
+    # Example: ignore a package if vulnerability doesn't apply
+    # - "package-name"
+  
+  # Continue on vulnerability found (don't fail CI)
+  continue-on-vulnerability-error: false
+  
+  # Audit and monitor settings
+  audit-and-monitor:
+    # Enable audit and monitor mode
+    enabled: true
+    
+    # Project information
+    project-id: "sonarqube-mcp"
+    
+    # Environment (development, staging, production)
+    environment: "development"
+
+# Output configuration
+output:
+  # Output format: json, text, bare
+  format: "json"
+  
+  # Include full report
+  full-report: true
+  
+  # Include CVE information
+  include-cve: true
+
+# Cache configuration
+cache:
+  # Enable caching
+  enabled: true
+  
+  # Cache directory
+  directory: ".safety-cache"
+  
+  # Cache expiry in seconds (24 hours)
+  expiry: 86400
+
+# Proxy configuration (if needed)
+# proxy:
+#   http: "http://proxy.company.com:8080"
+#   https: "https://proxy.company.com:8080"
+
+# API configuration
+api:
+  # API timeout in seconds
+  timeout: 60
+  
+  # Retry configuration
+  retries: 3
+  
+  # Retry delay in seconds
+  retry-delay: 1
