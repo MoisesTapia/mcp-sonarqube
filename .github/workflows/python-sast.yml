@@ -10,7 +10,7 @@ on:
     - cron: '0 2 * * 1'
 
 env:
-  PYTHON_VERSION: [3.11, 3.13]
+  PYTHON_VERSION: '3.11'
 
 jobs:
   # Security Scanning with Multiple Tools
