@@ -375,7 +375,7 @@ jobs:
 
     - name: Upload Docker SAST results
       if: steps.find-docker-files.outputs.has_docker_files == 'true'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: docker-sast-reports-${{ github.run_number }}
         path: |
@@ -477,7 +477,7 @@ jobs:
         echo "✅ Docker Compose validation completed"
 
     - name: Upload Docker Compose analysis results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: docker-compose-analysis-${{ github.run_number }}
         path: |

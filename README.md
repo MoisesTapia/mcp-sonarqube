@@ -357,7 +357,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🗺️ Roadmap
 
-### Current Version (v1.1.0) - Latest Release
+### Current Version (v2.0.1) - Latest Release
 - ✅ Core MCP protocol implementation
 - ✅ SonarQube integration
 - ✅ Streamlit web interface
@@ -369,7 +369,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - ✅ **NEW**: Enhanced Docker configuration and health checks
 - ✅ **NEW**: Production-ready configuration templates
 
-### Upcoming Features (v1.2)
+### Upcoming Features (v3.0.0)
 - [ ] Advanced analytics and reporting
 - [ ] Custom quality gate templates
 - [ ] Webhook integrations
@@ -378,7 +378,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [ ] Real-time notifications
 - [ ] Improved caching strategies
 
-### Future Enhancements (v2.0)
+### Future Enhancements (v4.0)
 - [ ] Machine learning insights
 - [ ] Advanced visualization
 - [ ] Plugin architecture

@@ -311,7 +311,7 @@ jobs:
         echo "✅ JavaScript/TypeScript security analysis report generated"
 
     - name: Upload SAST results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: javascript-sast-reports-${{ github.run_number }}
         path: |
@@ -496,7 +496,7 @@ jobs:
         echo "✅ JavaScript dependency security report generated"
 
     - name: Upload dependency analysis results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: js-dependency-analysis-reports-${{ github.run_number }}
         path: |

@@ -405,7 +405,7 @@ jobs:
 
     - name: Upload Docker quality results
       if: steps.find-docker-files.outputs.has_docker_files == 'true'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: docker-quality-reports-${{ github.run_number }}
         path: |
@@ -610,7 +610,7 @@ jobs:
 
     - name: Upload Docker Compose quality results
       if: steps.find-compose-files.outputs.has_compose_files == 'true'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: docker-compose-quality-reports-${{ github.run_number }}
         path: |

@@ -118,7 +118,7 @@ jobs:
 
     - name: Upload formatting report
       if: failure()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: js-formatting-report-${{ github.run_number }}
         path: formatting-report.md
@@ -331,7 +331,7 @@ jobs:
         echo "✅ Comprehensive linting report generated"
 
     - name: Upload linting results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: js-linting-reports-${{ github.run_number }}
         path: |
@@ -574,7 +574,7 @@ jobs:
         echo "✅ TypeScript analysis report generated"
 
     - name: Upload TypeScript analysis results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: typescript-analysis-reports-${{ github.run_number }}
         path: |
@@ -688,7 +688,7 @@ jobs:
         echo "✅ Complexity analysis report generated"
 
     - name: Upload complexity analysis results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: js-complexity-reports-${{ github.run_number }}
         path: |

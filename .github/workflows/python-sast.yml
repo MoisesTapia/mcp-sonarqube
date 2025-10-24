@@ -307,7 +307,7 @@ jobs:
         echo "✅ Comprehensive security analysis report generated"
 
     - name: Upload SAST results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: python-sast-reports-${{ github.run_number }}
         path: |
@@ -538,7 +538,7 @@ jobs:
         echo "✅ Dependency security report generated"
 
     - name: Upload dependency analysis results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: dependency-analysis-reports-${{ github.run_number }}
         path: |
