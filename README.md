@@ -2,6 +2,10 @@
 
 A comprehensive Model Context Protocol (MCP) server that enables seamless integration between AI assistants and SonarQube, facilitating code quality analysis, project management, and metrics consultation through natural language interactions.
 
+# To continue improve this MCP
+
+<a href="https://www.buymeacoffee.com/moisestapia" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-green.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+
 ## 🚀 Features
 
 ### Core Capabilities
