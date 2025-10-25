@@ -767,8 +767,11 @@ class ChatInterface:
     
     def _parse_user_intent(self, message: str) -> Tuple[Optional[str], Dict[str, Any]]:
         """Parse user message to identify intent and extract parameters with enhanced NLP."""
-        message_lower = message.lower()
+        message_lower = message.lower().strip()
         params = {}
+        
+        # Debug logging
+        print(f"DEBUG: Processing message: '{message}' -> '{message_lower}'")
         
         # Enhanced project key extraction patterns
         project_patterns = [
@@ -790,11 +793,14 @@ class ChatInterface:
         # Enhanced intent patterns with synonyms and variations
         intent_patterns = {
             "list_projects": [
-                r"(?:list|show|get|display|find)\s+(?:all\s+)?projects",
+                r"^list\s+all\s+projects?$",  # Exact match for "list all projects"
+                r"^list\s+projects?$",        # "list projects"
+                r"(?:list|show|get|display|find)\s+(?:all\s+)?projects?",
                 r"what\s+projects\s+(?:do\s+)?(?:i\s+have|are\s+available)",
-                r"show\s+me\s+(?:all\s+)?projects",
-                r"projects\s+list",
-                r"(?:all|available)\s+projects"
+                r"show\s+me\s+(?:all\s+)?projects?",
+                r"projects?\s+list",
+                r"(?:all|available)\s+projects?",
+                r"^projects?$"  # Just "projects"
             ],
             "get_project_details": [
                 r"(?:project\s+)?(?:details|info|information)\s+(?:for|of|about)",
@@ -842,10 +848,33 @@ class ChatInterface:
             ]
         }
         
+        # Simple direct matches first (most common commands)
+        simple_matches = {
+            "list all projects": "list_projects",
+            "list projects": "list_projects", 
+            "show projects": "list_projects",
+            "get projects": "list_projects",
+            "projects": "list_projects",
+            "show metrics": "get_measures",
+            "get metrics": "get_measures",
+            "show issues": "search_issues",
+            "get issues": "search_issues",
+            "health check": "health_check",
+            "check health": "health_check"
+        }
+        
+        # Check for direct matches first
+        if message_lower in simple_matches:
+            intent = simple_matches[message_lower]
+            print(f"DEBUG: Direct match found: '{message_lower}' -> '{intent}'")
+            return intent, params
+        
         # Try to match intent patterns
         for intent, patterns in intent_patterns.items():
             for pattern in patterns:
-                if re.search(pattern, message_lower):
+                match = re.search(pattern, message_lower)
+                if match:
+                    print(f"DEBUG: Pattern match found: '{pattern}' -> '{intent}'")
                     # Extract project key if needed
                     project_key = extract_project_key(message)
                     if project_key and intent != "list_projects":
