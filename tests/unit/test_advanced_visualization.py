@@ -5,8 +5,9 @@ import pandas as pd
 from datetime import datetime
 from unittest.mock import Mock, patch
 
+from src.streamlit_app.components.reporting import (ReportGenerator,
+                                                    DataExporter)
 from src.streamlit_app.components.visualization import AdvancedVisualization
-from src.streamlit_app.components.reporting import ReportGenerator, DataExporter
 
 
 class TestAdvancedVisualization:

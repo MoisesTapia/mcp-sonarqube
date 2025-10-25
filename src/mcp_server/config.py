@@ -23,7 +23,9 @@ class CacheConfig(BaseModel):
 
     enabled: bool = Field(True, description="Enable caching")
     ttl: int = Field(300, description="Default TTL in seconds")
-    redis_url: Optional[str] = Field(None, description="Redis URL for distributed cache")
+    redis_url: Optional[str] = Field(
+        None, description="Redis URL for distributed cache"
+    )
     ttl_by_type: Dict[str, int] = Field(
         default_factory=lambda: {
             "projects": 300,
@@ -57,7 +59,9 @@ class MCPServerSettings(BaseSettings):
     # SonarQube configuration
     sonarqube_url: str = Field(..., description="SonarQube server URL")
     sonarqube_token: str = Field(..., description="SonarQube authentication token")
-    sonarqube_organization: Optional[str] = Field(None, description="SonarQube organization")
+    sonarqube_organization: Optional[str] = Field(
+        None, description="SonarQube organization"
+    )
     sonarqube_timeout: int = Field(30, description="Request timeout in seconds")
     sonarqube_max_retries: int = Field(3, description="Maximum number of retries")
     sonarqube_verify_ssl: bool = Field(True, description="Verify SSL certificates")
@@ -71,7 +75,9 @@ class MCPServerSettings(BaseSettings):
     # Cache configuration
     cache_enabled: bool = Field(True, description="Enable caching")
     cache_ttl: int = Field(300, description="Default cache TTL")
-    cache_redis_url: Optional[str] = Field(None, description="Redis URL for distributed cache")
+    cache_redis_url: Optional[str] = Field(
+        None, description="Redis URL for distributed cache"
+    )
 
     # Performance configuration
     max_concurrent_requests: int = Field(50, description="Maximum concurrent requests")

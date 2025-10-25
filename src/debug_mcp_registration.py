@@ -92,23 +92,29 @@ async def debug_mcp_registration():
             print(f"   ❌ Error en debug: {e}")
         
         # Test 2: Check if server is properly initialized
-        print("\n2. 🏥 Verificando inicialización del servidor...")
+        print("\n2.🏥Verificando inicialización del servidor...")
         try:
             response = await client.get(f"{server_url}/health")
             if response.status_code == 200:
                 health_data = response.json()
                 print(f"   ✅ Servidor saludable: {health_data.get('status')}")
-                print(f"   🔗 SonarQube conectado: {health_data.get('sonarqube_connected')}")
+                print(
+                    f"🔗 SonarQube conectado: {health_data.get('sonarqube_connected')}"
+                )
                 
                 if health_data.get('sonarqube_connected'):
-                    print(f"   ✅ SonarQube está conectado - las herramientas deberían funcionar")
+                    print(
+                        f"✅SonarQube está conectado - las herramientas deberían funcionar"
+                    )
                 else:
-                    print(f"   ⚠️  SonarQube no conectado - puede afectar el registro de herramientas")
+                    print(
+                        f"⚠️SonarQube no conectado - puede afectar el registro de herramientas"
+                    )
             else:
                 print(f"   ❌ Servidor no saludable: HTTP {response.status_code}")
         except Exception as e:
             print(f"   ❌ Error verificando salud: {e}")
-        
+
         # Test 3: Try to list tools again with more detail
         print("\n3. 📋 Intentando listar herramientas con más detalle...")
         try:
@@ -158,7 +164,6 @@ async def debug_mcp_registration():
         except Exception as e:
             print(f"   ❌ Error en readiness check: {e}")
 
-
 def main():
     """Main function."""
     print("🚀 Debuggeando registro de herramientas MCP")
@@ -173,20 +178,17 @@ def main():
     
     print("\n" + "=" * 80)
     print("🏁 Debug completado")
-    
     print("\n💡 Posibles causas si no hay herramientas:")
     print("   1. ❌ Error en importaciones de clases de herramientas")
     print("   2. ❌ Error en inicialización de SonarQubeClient")
     print("   3. ❌ Error en registro de herramientas en FastMCP")
     print("   4. ❌ FastMCP no está almacenando herramientas donde esperamos")
     print("   5. ❌ Servidor MCP no completó la inicialización")
-    
     print("\n🔧 Próximos pasos si no hay herramientas:")
     print("   1. Verificar logs del servidor MCP")
     print("   2. Probar importaciones manualmente")
     print("   3. Verificar configuración de SonarQube")
     print("   4. Reiniciar servidor MCP completamente")
-
 
 if __name__ == "__main__":
     main()

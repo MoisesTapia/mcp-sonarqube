@@ -1,18 +1,12 @@
 """Unit tests for SonarQube client."""
-
 import pytest
 import httpx
 
-from src.sonarqube_client import (
-    SonarQubeClient,
-    AuthenticationError,
-    AuthorizationError,
-    NetworkError,
-    APIError,
-    RateLimitError,
-    ServerError,
-    ValidationError,
-)
+from src.sonarqube_client import (APIError, AuthenticationError
+                                 AuthenticationError, NetworkError,
+                                 RateLimitError, ServerError, SonarQubeClient,
+                                 ValidationError)
+
 from tests.fixtures.sonarqube_responses import SonarQubeFixtures
 
 

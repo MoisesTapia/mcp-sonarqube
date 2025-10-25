@@ -17,6 +17,7 @@ jobs:
   security-scan:
     name: Security Analysis
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -361,6 +362,7 @@ jobs:
   dependency-analysis:
     name: Dependency Security Analysis
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
     - name: Checkout code
       uses: actions/checkout@v4

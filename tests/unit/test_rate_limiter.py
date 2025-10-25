@@ -1,11 +1,9 @@
 """Unit tests for rate limiter."""
-
 import asyncio
 import pytest
 import time
 
 from src.sonarqube_client.rate_limiter import RateLimiter
-
 
 class TestRateLimiter:
     """Test cases for RateLimiter."""

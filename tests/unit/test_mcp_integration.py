@@ -5,9 +5,12 @@ from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime, timedelta
 import asyncio
 
-from src.streamlit_app.services.mcp_client import MCPClient, MCPToolResult, MCPToolCall
-from src.streamlit_app.services.mcp_integration import MCPIntegrationService, DataSyncConfig, SyncedData
-from src.streamlit_app.utils.error_handler import ErrorHandler, ErrorCategory, ErrorSeverity, ErrorInfo
+from src.streamlit_app.services.mcp_client import (MCPClient, MCPToolResult,
+                                                   MCPToolCall)
+from src.streamlit_app.services.mcp_integration import (MCPIntegrationService,
+                                                        DataSyncConfig,SyncedData)
+from src.streamlit_app.utils.error_handler import (ErrorHandler, ErrorCategory,
+                                                   ErrorSeverity, ErrorInfo)
 
 
 class TestMCPClient:

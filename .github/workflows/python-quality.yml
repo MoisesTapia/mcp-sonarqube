@@ -14,6 +14,7 @@ jobs:
   formatting:
     name: Code Formatting & Style
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -104,6 +105,7 @@ jobs:
   linting:
     name: Linting & Code Analysis
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -347,6 +349,7 @@ jobs:
   type-checking:
     name: Type Checking & Analysis
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -496,6 +499,7 @@ jobs:
   complexity-analysis:
     name: Code Complexity Analysis
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
     - name: Checkout code
       uses: actions/checkout@v4

@@ -1,9 +1,9 @@
 """Tests for Streamlit SonarQube service."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 import asyncio
 
+from unittest.mock import AsyncMock, MagicMock, patch
 from src.streamlit_app.services.sonarqube_service import SonarQubeService
 from src.streamlit_app.config.settings import ConfigManager
 from src.sonarqube_client.exceptions import SonarQubeException
