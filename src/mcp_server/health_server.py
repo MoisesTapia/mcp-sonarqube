@@ -256,22 +256,33 @@ class HealthCheckServer:
                                 logger.info(f"Found tool {tool_name} via _tool_manager.{attr_name}: {type(tool_obj)}")
                                 
                                 # Extract the function from FastMCP FunctionTool
-                                if hasattr(tool_obj, 'func'):
-                                    tool_func = tool_obj.func
-                                    logger.info(f"Extracted func from {tool_name}: {type(tool_func)}")
-                                elif callable(tool_obj):
+                                logger.info(f"Inspecting FunctionTool {tool_name}: {dir(tool_obj)}")
+                                
+                                # Try different possible attributes for the actual function
+                                # Based on logs, FunctionTool has 'fn' attribute
+                                possible_func_attrs = [
+                                    'fn', 'func', 'function', 'handler', 'callback', '_func', '_function', 
+                                    '_handler', '_callback', 'call_func', 'execute', '_execute', 'run'
+                                ]
+                                
+                                for func_attr in possible_func_attrs:
+                                    if hasattr(tool_obj, func_attr):
+                                        potential_func = getattr(tool_obj, func_attr)
+                                        logger.info(f"Found {func_attr} in {tool_name}: {type(potential_func)}, callable: {callable(potential_func)}")
+                                        if callable(potential_func):
+                                            tool_func = potential_func
+                                            logger.info(f"✅ Using {func_attr} from {tool_name}: {type(tool_func)}")
+                                            break
+                                
+                                # If no function attribute found, try if the object itself is callable
+                                if not tool_func and callable(tool_obj):
                                     tool_func = tool_obj
-                                    logger.info(f"Tool {tool_name} is directly callable: {type(tool_func)}")
-                                else:
-                                    logger.warning(f"Tool {tool_name} object is not callable: {type(tool_obj)}")
-                                    # Try to find other callable attributes
-                                    for func_attr in ['function', 'handler', 'call', '__call__']:
-                                        if hasattr(tool_obj, func_attr):
-                                            potential_func = getattr(tool_obj, func_attr)
-                                            if callable(potential_func):
-                                                tool_func = potential_func
-                                                logger.info(f"Found callable {func_attr} in {tool_name}: {type(tool_func)}")
-                                                break
+                                    logger.info(f"✅ Tool {tool_name} is directly callable: {type(tool_func)}")
+                                
+                                # Last resort: try to call the object directly (some FastMCP tools work this way)
+                                if not tool_func:
+                                    logger.warning(f"No callable function found in {tool_name}, will try direct call")
+                                    # We'll handle this in the execution part
                                 break
                 except Exception as e:
                     logger.warning(f"Error accessing _tool_manager for {tool_name}: {e}")
@@ -292,7 +303,7 @@ class HealthCheckServer:
                                 tool_func = tool_obj
                             break
             
-            if not tool_func:
+            if not tool_func and not tool_obj:
                 logger.error(f"Tool '{tool_name}' not found in any location")
                 return web.json_response({
                     "error": f"Tool '{tool_name}' not found"
@@ -300,10 +311,35 @@ class HealthCheckServer:
             
             try:
                 # Call the tool function with arguments
-                if arguments:
-                    result = await tool_func(**arguments)
+                if tool_func:
+                    # We found a callable function
+                    logger.info(f"Calling tool function {tool_name} with args: {arguments}")
+                    if arguments:
+                        result = await tool_func(**arguments)
+                    else:
+                        result = await tool_func()
+                elif tool_obj:
+                    # Try to call the tool object directly (FastMCP style)
+                    logger.info(f"Calling tool object {tool_name} directly with args: {arguments}")
+                    if hasattr(tool_obj, '__call__'):
+                        if arguments:
+                            result = await tool_obj(**arguments)
+                        else:
+                            result = await tool_obj()
+                    else:
+                        # Try using FastMCP's internal call mechanism
+                        if hasattr(self.mcp_server.app._tool_manager, 'call_tool'):
+                            logger.info(f"Using tool_manager.call_tool for {tool_name} with args: {arguments}")
+                            try:
+                                result = await self.mcp_server.app._tool_manager.call_tool(tool_name, arguments or {})
+                                logger.info(f"Tool {tool_name} executed successfully via tool_manager")
+                            except Exception as e:
+                                logger.error(f"Error in tool_manager.call_tool for {tool_name}: {e}")
+                                raise
+                        else:
+                            raise Exception(f"Cannot find a way to execute tool {tool_name}")
                 else:
-                    result = await tool_func()
+                    raise Exception(f"No callable found for tool {tool_name}")
                 
                 return web.json_response({
                     "success": True,
