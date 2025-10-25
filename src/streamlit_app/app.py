@@ -4,6 +4,10 @@ import asyncio
 import os
 from typing import Dict, Any
 
+# Configure Streamlit first to suppress warnings
+from streamlit_app.config.streamlit_config import initialize_streamlit_app
+initialize_streamlit_app()
+
 import streamlit as st
 
 from streamlit_app.config.settings import ConfigManager

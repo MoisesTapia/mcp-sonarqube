@@ -478,38 +478,37 @@ class MCPClient:
             return False
     
     def check_health_sync(self) -> bool:
-        """Synchronous health check."""
+        """Synchronous health check optimized for Streamlit."""
         try:
-            # Try to get existing loop
-            try:
-                loop = asyncio.get_running_loop()
-                # If we're in an async context, we can't use run_until_complete
-                # Create a new thread to run the async code
-                import concurrent.futures
-                import threading
-                
-                def run_in_thread():
-                    new_loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(new_loop)
-                    try:
-                        return new_loop.run_until_complete(self.check_health())
-                    finally:
-                        new_loop.close()
-                
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(run_in_thread)
-                    return future.result()
+            # Simplified approach for Streamlit
+            import httpx
+            
+            # Use synchronous HTTP client to avoid async issues
+            with httpx.Client(timeout=5.0) as client:
+                response = client.get(f"{self.server_url}/health")
+                if response.status_code == 200:
+                    health_data = response.json()
+                    status = health_data.get("status", "unhealthy")
                     
-            except RuntimeError:
-                # No running loop, safe to create one
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    return loop.run_until_complete(self.check_health())
-                finally:
-                    loop.close()
+                    # Update connection status
+                    if status == "healthy":
+                        self.connection_status = "connected"
+                        health_ok = True
+                    else:
+                        self.connection_status = "error"
+                        health_ok = False
+                    
+                    self._ensure_session_state()
+                    st.session_state.mcp_client_state["last_health_check"] = datetime.now().isoformat()
+                    
+                    return health_ok
+                else:
+                    self.connection_status = "error"
+                    return False
+                    
         except Exception as e:
-            self.logger.error(f"Error in check_health_sync: {e}")
+            self.logger.warning(f"Health check failed: {e}")
+            self.connection_status = "error"
             return False
     
     def get_available_tools(self) -> List[Dict[str, Any]]:
@@ -532,6 +531,7 @@ class MCPClient:
                 loop = asyncio.get_running_loop()
                 # If we're in an async context, create a new thread
                 import concurrent.futures
+                import threading
                 
                 def run_in_thread():
                     new_loop = asyncio.new_event_loop()
@@ -543,13 +543,17 @@ class MCPClient:
                 
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     future = executor.submit(run_in_thread)
-                    real_tools = future.result(timeout=5)
+                    try:
+                        real_tools = future.result(timeout=5)
+                        if real_tools:
+                            return real_tools
+                    except concurrent.futures.TimeoutError:
+                        self.logger.warning("Timeout fetching tools from server")
+                    except Exception as e:
+                        self.logger.warning(f"Error in thread execution: {e}")
                     
-                if real_tools:
-                    return real_tools
-                    
-            except (RuntimeError, concurrent.futures.TimeoutError):
-                # No running loop or timeout, try direct approach
+            except RuntimeError:
+                # No running loop, try direct approach
                 try:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
@@ -559,8 +563,10 @@ class MCPClient:
                             return real_tools
                     finally:
                         loop.close()
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.warning(f"Error in direct async execution: {e}")
+            except Exception as e:
+                self.logger.warning(f"Unexpected error in get_available_tools: {e}")
                     
         except Exception as e:
             self.logger.warning(f"Could not fetch real tools from server: {e}")
